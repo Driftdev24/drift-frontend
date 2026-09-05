@@ -1,32 +1,3 @@
-// --- LAYER 1: ANTI-INSPECT SHIELD ---
-document.addEventListener('contextmenu', event => event.preventDefault());
-
-document.addEventListener('keydown', (e) => {
-  if (
-    e.key === 'F12' || 
-    (e.ctrlKey && e.shiftKey && ['I', 'i', 'J', 'j', 'C', 'c'].includes(e.key)) || 
-    (e.ctrlKey && ['U', 'u'].includes(e.key))
-  ) {
-    e.preventDefault();
-    triggerTamperLockdown();
-  }
-});
-
-setInterval(() => {
-  const start = performance.now();
-  debugger; 
-  if (performance.now() - start > 100) {
-    triggerTamperLockdown();
-  }
-}, 1000);
-
-function triggerTamperLockdown() {
-  document.body.innerHTML = `
-    <div style="background:#000; color:red; height:100vh; width:100vw; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:monospace; text-align:center; padding: 20px;">
-      <h1 style="font-size:2rem; margin-bottom:10px;">SECURITY LOCKDOWN</h1>
-      <p style="font-size:1rem;">Developer tools are disabled for your privacy. Please refresh to try again.</p>
-    </div>
-  `;
   if (socket) socket.disconnect();
   performLocalPurge();
 }

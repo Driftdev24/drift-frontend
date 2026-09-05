@@ -37,7 +37,7 @@ function triggerTamperLockdown() {
 // UPDATED: Dynamic environment detection for separated hosting
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
   ? 'http://localhost:3000' 
-  : 'https://drift-backend.fly.dev'; // IMPORTANT: Change this to your actual Fly.io URL!
+  : 'https://drift-backend-nkru.onrender.com/'; // IMPORTANT: Change this to your actual Fly.io URL!
 
 // Initialize socket with the external URL or localhost
 // Include standard polling fallback for Vercel/Fly

@@ -12,17 +12,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-/* // DISABLED TEMPORARILY FOR TESTING 
-// Remove the /* and */ /* to re-enable before public launch
-setInterval(() => {
-  const start = performance.now();
-  debugger; 
-  if (performance.now() - start > 100) {
-    triggerTamperLockdown();
-  }
-}, 1000);
-*/
-
 function triggerTamperLockdown() {
   document.body.innerHTML = `
     <div style="background:#000; color:red; height:100vh; width:100vw; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:monospace; text-align:center; padding: 20px;">
@@ -45,21 +34,17 @@ const socket = io(BACKEND_URL, {
 });
 
 // =========================================================================
-// 🛑 EXPRESSTURN SERVER CONFIGURATION (FIREWALL BYPASS)
+// 🛑 OPTIMIZED EXPRESSTURN SERVER CONFIGURATION (LATENCY FIX)
 // =========================================================================
 const rtcConfig = { 
   iceServers: [
-    // Standard STUN Servers (Keep these for fast local discovery)
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    
-    // YOUR EXPRESSTURN CREDENTIALS
+    { urls: 'stun:stun.twilio.com:3478' }, 
     {
       urls: [
         "turn:free.expressturn.com:3478?transport=udp",
-        "turn:free.expressturn.com:3478?transport=tcp",
-        "turns:free.expressturn.com:5349?transport=tcp"
+        "turn:free.expressturn.com:3478?transport=tcp"
       ],
       username: "000000002103972211",  
       credential: "Z3WQQwReDRX41Vl1sjRp9j/vFnI=" 
@@ -89,6 +74,9 @@ let isCallActive = false;
 
 let confirmCallback = null;
 
+// Chunking Buffers
+const incomingFiles = {};
+
 window.addEventListener('beforeunload', (e) => {
   if (currentRoomId) {
     e.preventDefault();
@@ -96,9 +84,8 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// --- UI EFFECTS (LIQUID GLASS & OBFUSCATION) ---
+// --- UI EFFECTS (LIQUID GLASS) ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Flashlight hover effect for liquid glass panels
     const panels = document.querySelectorAll('.glass-panel');
     panels.forEach(panel => {
         panel.addEventListener('mousemove', (e) => {
@@ -109,22 +96,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         panel.addEventListener('mouseleave', () => {
             panel.style.background = 'var(--glass-bg)';
-        });
-    });
-
-    // Text obfuscation click-to-reveal
-    const obfuscatedElements = document.querySelectorAll('.obfuscated');
-    obfuscatedElements.forEach(el => {
-        const maskedText = el.innerText;
-        const realText = el.getAttribute('data-reveal');
-        el.addEventListener('click', function() {
-            if (this.classList.contains('revealed')) {
-                this.innerText = maskedText;
-                this.classList.remove('revealed');
-            } else {
-                this.innerText = realText;
-                this.classList.add('revealed');
-            }
         });
     });
 });
@@ -236,7 +207,7 @@ function setupWebRTC() {
 
   peerConnection.onicegatheringstatechange = () => {
     if (peerConnection.iceGatheringState === 'complete' && !hasIceCandidates) {
-       displaySystemMessage('[WARNING] WebRTC is blocked by your browser! If using Brave, lower your Shields. If using Opera/Edge, disable Tracking Prevention.', 'danger');
+       displaySystemMessage('[WARNING] WebRTC is blocked! Lower Brave Shields or disable Tracking Prevention.', 'danger');
     }
   };
 
@@ -249,7 +220,11 @@ function setupWebRTC() {
   };
 
   if (isCreator) {
-    dataChannel = peerConnection.createDataChannel('drift-chat');
+    // FIX: Optimized queue prevents data packet freezing
+    dataChannel = peerConnection.createDataChannel('drift-chat', {
+        ordered: true,
+        maxRetransmits: 3 
+    });
     setupDataChannel();
   } else {
     peerConnection.ondatachannel = (event) => {
@@ -262,7 +237,33 @@ function setupWebRTC() {
 function setupDataChannel() {
   dataChannel.onopen = () => displaySystemMessage('Secure connection active.', 'success');
   dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
-  dataChannel.onmessage = (event) => renderMessage(JSON.parse(event.data), false);
+  
+  dataChannel.onmessage = (event) => {
+    const payload = JSON.parse(event.data);
+
+    // CHUNKING RECEIVER LOGIC
+    if (payload.type === 'upload_start') {
+        incomingFiles[payload.fileId] = { chunks: [], fileType: payload.fileType, mime: payload.mime, total: payload.totalChunks };
+        showLoadingIndicator(`Peer is sending a ${payload.fileType}...`, payload.fileId);
+    } 
+    else if (payload.type === 'upload_chunk') {
+        if (incomingFiles[payload.fileId]) {
+            incomingFiles[payload.fileId].chunks[payload.chunkIndex] = payload.data;
+        }
+    } 
+    else if (payload.type === 'upload_end') {
+        if (incomingFiles[payload.fileId]) {
+            hideLoadingIndicator(payload.fileId);
+            const completeData = incomingFiles[payload.fileId].chunks.join('');
+            renderMessage({ type: incomingFiles[payload.fileId].fileType, mime: incomingFiles[payload.fileId].mime, data: completeData }, false);
+            delete incomingFiles[payload.fileId];
+        }
+    } 
+    else {
+        // Standard Text
+        renderMessage(payload, false);
+    }
+  };
 }
 
 socket.on('peer-joined', async () => {
@@ -273,9 +274,7 @@ socket.on('peer-joined', async () => {
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       socket.emit('webrtc-offer', offer);
-    } catch (err) {
-      console.error("Error creating offer:", err);
-    }
+    } catch (err) { console.error(err); }
   }
 });
 
@@ -284,17 +283,13 @@ socket.on('webrtc-offer', async (offer) => {
     try {
       if (!peerConnection) setupWebRTC();
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc-answer', answer);
-
       while (pendingChatIce.length) {
         peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(e => console.log(e));
       }
-    } catch (err) {
-      console.error("Error handling offer:", err);
-    }
+    } catch (err) { console.error(err); }
   }
 });
 
@@ -305,37 +300,64 @@ socket.on('webrtc-answer', async (answer) => {
       while (pendingChatIce.length) {
         peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(e => console.log(e));
       }
-    } catch (err) {
-      console.error("Error handling answer:", err);
-    }
+    } catch (err) { console.error(err); }
   }
 });
 
 socket.on('webrtc-ice', async (candidate) => {
   if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log("ICE error:", e));
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log(e));
   } else {
     pendingChatIce.push(candidate);
   }
 });
 
-// --- MESSAGING ---
+// --- MESSAGING & CHUNKING SENDER ---
+
+// FIX: Prevents WebRTC Crash by slicing large files into 16KB safe chunks
+function sendDataChunked(dataUrl, fileType, mimeType) {
+    if (!dataChannel || dataChannel.readyState !== 'open') return;
+
+    const chunkSize = 16384; // 16KB limit
+    const totalChunks = Math.ceil(dataUrl.length / chunkSize);
+    const fileId = Date.now().toString();
+
+    // 1. Notify Receiver
+    dataChannel.send(JSON.stringify({ type: 'upload_start', fileId, totalChunks, fileType, mime: mimeType }));
+
+    // 2. Show Local Loading
+    showLoadingIndicator(`Sending ${fileType}...`, fileId);
+
+    let currentChunk = 0;
+
+    function sendNext() {
+        if (dataChannel.readyState !== 'open') return hideLoadingIndicator(fileId);
+
+        const start = currentChunk * chunkSize;
+        const end = start + chunkSize;
+        const chunk = dataUrl.slice(start, end);
+
+        dataChannel.send(JSON.stringify({ type: 'upload_chunk', fileId, chunkIndex: currentChunk, data: chunk }));
+
+        currentChunk++;
+        if (currentChunk < totalChunks) {
+            setTimeout(sendNext, 5); // 5ms delay prevents buffer flooding
+        } else {
+            // 3. Finish Upload
+            dataChannel.send(JSON.stringify({ type: 'upload_end', fileId }));
+            hideLoadingIndicator(fileId);
+            renderMessage({ type: fileType, mime: mimeType, data: dataUrl }, true);
+        }
+    }
+    sendNext();
+}
 
 function handleSendText() {
   const input = document.getElementById('message-input');
   const text = input.value.trim();
   
   if (!text) return;
-
-  if (!dataChannel) {
-    displaySystemMessage('[SYSTEM ALERT] Cannot send: You are alone in the room.', 'danger');
-    return;
-  }
-  
-  if (dataChannel.readyState !== 'open') {
-    displaySystemMessage(`[SYSTEM ALERT] Cannot send: Connection is pending (State: ${dataChannel.readyState}).`, 'danger');
-    return;
-  }
+  if (!dataChannel || dataChannel.readyState !== 'open') return;
   
   const payload = { type: 'text', data: text };
   try {
@@ -343,33 +365,18 @@ function handleSendText() {
     renderMessage(payload, true);
     input.value = '';
   } catch(e) {
-    displaySystemMessage('[ERROR] Failed to send transmission. Connection unstable.', 'danger');
+    displaySystemMessage('[ERROR] Failed to send transmission.', 'danger');
   }
 }
 
 function handleFileSelect(event) {
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[SYSTEM ALERT] Cannot send file: Connection is not ready.', 'danger');
-    return;
-  }
   const file = event.target.files[0];
   if (!file) return;
 
-  if (file.size > 50 * 1024 * 1024) {
-    displaySystemMessage('File is too large. Maximum size is 50MB.', 'danger');
-    return;
-  }
-
-  showConfirm(`Send this file? (${(file.size/1024/1024).toFixed(2)} MB)`, () => {
+  showConfirm(`Send image?`, () => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const payload = { type: 'file', mime: file.type, data: e.target.result };
-      try {
-        dataChannel.send(JSON.stringify(payload));
-        renderMessage(payload, true);
-      } catch (err) {
-        displaySystemMessage('[ERROR] File too large for instantaneous network channel buffer.', 'danger');
-      }
+      sendDataChunked(e.target.result, 'image', file.type);
     };
     reader.readAsDataURL(file);
     event.target.value = ''; 
@@ -380,7 +387,7 @@ async function toggleMic() {
   const micBtn = document.getElementById('mic-btn');
   
   if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[SYSTEM ALERT] Cannot record voice: Connection is not ready.', 'danger');
+    displaySystemMessage('[SYSTEM ALERT] Connection is not ready.', 'danger');
     return;
   }
   
@@ -393,22 +400,12 @@ async function toggleMic() {
       mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
       
       mediaRecorder.onstop = () => {
+        // Use generic webm; let the browser define exact codec
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        if (audioBlob.size > 50 * 1024 * 1024) {
-          displaySystemMessage('Voice message exceeds 50MB limit.', 'danger');
-          return;
-        }
         const reader = new FileReader();
         reader.onload = (e) => {
-          const payload = { type: 'file', mime: 'audio/webm', data: e.target.result };
-          if (dataChannel && dataChannel.readyState === 'open') {
-            try {
-               dataChannel.send(JSON.stringify(payload));
-               renderMessage(payload, true);
-            } catch(err) {
-               displaySystemMessage('[ERROR] Audio payload crashed the connection buffer.', 'danger');
-            }
-          }
+            // Send chunked to prevent crash
+            sendDataChunked(e.target.result, 'voice message', 'audio/webm');
         };
         reader.readAsDataURL(audioBlob);
         stream.getTracks().forEach(track => track.stop());
@@ -432,7 +429,7 @@ async function toggleMic() {
 function requestCall() {
   if (isCallActive) return;
   amICaller = true;
-  socket.emit('call-request', { isVideo: false }); // Force false
+  socket.emit('call-request', { isVideo: false });
   displaySystemMessage(`Dialing peer for Secure Voice Call...`);
 }
 
@@ -468,19 +465,16 @@ socket.on('call-response', async (data) => {
 async function startCallEngine() {
   isCallActive = true;
   document.getElementById('call-ui').classList.remove('hidden');
-  document.getElementById('call-status-text').textContent = 'SECURE VOICE ACTIVE';
   
   try {
-    // STRICTLY AUDIO - This prevents the getUserMedia crash
+    // AUDIO ONLY 
     callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-
     callConnection = new RTCPeerConnection(rtcConfig);
     
     callConnection.onicecandidate = (event) => {
       if (event.candidate) socket.emit('call-ice', event.candidate);
     };
 
-    // Attach incoming stream to the audio tag
     callConnection.ontrack = (event) => {
       const remoteAudio = document.getElementById('remote-audio');
       if (remoteAudio.srcObject !== event.streams[0]) {
@@ -499,7 +493,7 @@ async function startCallEngine() {
     }
 
   } catch (err) {
-    displaySystemMessage(`[CALL FAILED] Microphone access denied or unavailable.`, 'danger');
+    displaySystemMessage(`[CALL FAILED] Microphone access denied.`, 'danger');
     endCall();
   }
 }
@@ -545,7 +539,6 @@ function endCall() {
     callConnection = null;
   }
   
-  // Clear the audio tag instead of video
   document.getElementById('remote-audio').srcObject = null;
   document.getElementById('call-ui').classList.add('hidden');
   
@@ -564,19 +557,34 @@ function toggleCallMic() {
   }
 }
 
-// --- UI RENDERING ---
+// --- UI RENDERING & LOADING ---
+
+function showLoadingIndicator(text, id) {
+    const container = document.getElementById('messages-container');
+    const msgEl = document.createElement('div');
+    msgEl.className = `msg loading`;
+    msgEl.id = `load-${id}`;
+    msgEl.innerHTML = `<span class="loader-circle"></span> ${text}`;
+    container.appendChild(msgEl);
+    container.scrollTop = container.scrollHeight;
+}
+
+function hideLoadingIndicator(id) {
+    const loader = document.getElementById(`load-${id}`);
+    if (loader) loader.remove();
+}
 
 function renderMessage(payload, isMe) {
   const container = document.getElementById('messages-container');
   const msgEl = document.createElement('div');
   msgEl.className = `msg ${isMe ? 'outgoing' : 'incoming'}`;
 
+  // FIX: Explicitly checks type instead of mime.startsWith
   if (payload.type === 'text') {
     const textNode = document.createElement('div');
     textNode.textContent = payload.data; 
     msgEl.appendChild(textNode);
-  } else if (payload.type === 'file') {
-    if (payload.mime.startsWith('image/')) {
+  } else if (payload.type === 'image') {
       const img = document.createElement('img');
       img.src = payload.data;
       img.className = 'media-content clickable-media';
@@ -585,13 +593,12 @@ function renderMessage(payload, isMe) {
         document.getElementById('media-modal').classList.remove('hidden');
       };
       msgEl.appendChild(img);
-    } else if (payload.mime.startsWith('audio/')) {
+  } else if (payload.type === 'voice message' || payload.type === 'audio') {
       const audio = document.createElement('audio');
       audio.src = payload.data;
       audio.controls = true;
       audio.className = 'media-content';
       msgEl.appendChild(audio);
-    }
   }
 
   container.appendChild(msgEl);
@@ -629,7 +636,6 @@ function performLocalPurge() {
 function requestPurge() {
   showConfirm("Are you sure you want to leave and destroy the chat?", () => {
     socket.emit('shred-room');
-    
     const alertModal = document.getElementById('purge-alert');
     alertModal.classList.remove('hidden');
     performLocalPurge();

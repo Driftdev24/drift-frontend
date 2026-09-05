@@ -49,11 +49,8 @@ let currentPassword = null;
 
 let peerConnection;
 let dataChannel;
+let chatIceQueue = []; 
 let isCreator = false;
-
-// UPGRADED: Global queues prevent dropped network packets during latency spikes
-let pendingChatIce = []; 
-let pendingCallIce = []; 
 
 let mediaRecorder;
 let audioChunks = [];
@@ -61,17 +58,20 @@ let isRecording = false;
 
 let callConnection = null;
 let callStream = null;
+let callIceQueue = []; 
 let isVideoCall = false;
 let amICaller = false;
 let isCallActive = false;
 
 let confirmCallback = null;
 
+// UPGRADED: Maximum Redundancy Array for cross-browser NAT traversal
 const rtcConfig = { 
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com' },
     {
       urls: "turn:openrelay.metered.ca:80",
       username: "openrelayproject",
@@ -87,7 +87,8 @@ const rtcConfig = {
       username: "openrelayproject",
       credential: "openrelayproject"
     }
-  ] 
+  ],
+  iceCandidatePoolSize: 10 // Pre-fetches network coordinates to kill the connection delay
 };
 
 window.addEventListener('beforeunload', (e) => {
@@ -171,7 +172,7 @@ function handleJoin(e) {
   socket.emit('join-room', { id: currentRoomId, password: currentPassword }, (res) => {
     if (res.success) {
       isCreator = false;
-      if (!peerConnection) setupWebRTC(); // Ensure connection is ready
+      if (!peerConnection) setupWebRTC(); 
       openChatInterface();
       displaySystemMessage('[SYSTEM] Room joined. Negotiating secure P2P tunnel...', 'normal');
     } else {
@@ -191,12 +192,21 @@ function openChatInterface() {
 // --- SYNCHRONIZED WEBRTC HANDSHAKE ---
 
 function setupWebRTC() {
-  if (peerConnection) return; // Prevent duplicate connections
+  if (peerConnection) return; 
   peerConnection = new RTCPeerConnection(rtcConfig);
+  let hasIceCandidates = false;
   
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
+      hasIceCandidates = true;
       socket.emit('webrtc-ice', event.candidate);
+    }
+  };
+
+  // NEW: Advanced Browser Shield / Adblocker detection
+  peerConnection.onicegatheringstatechange = () => {
+    if (peerConnection.iceGatheringState === 'complete' && !hasIceCandidates) {
+       displaySystemMessage('[WARNING] WebRTC is blocked by your browser! If using Brave, lower your Shields. If using Opera/Edge, disable Tracking Prevention.', 'danger');
     }
   };
 
@@ -208,7 +218,6 @@ function setupWebRTC() {
     }
   };
 
-  // UPGRADED: Reverted to highly stable, standard in-band negotiation for mobile browser support
   if (isCreator) {
     dataChannel = peerConnection.createDataChannel('drift-chat');
     setupDataChannel();
@@ -250,9 +259,8 @@ socket.on('webrtc-offer', async (offer) => {
       await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc-answer', answer);
 
-      // Flush queue AFTER setting remote description to prevent dropped packets
-      while (pendingChatIce.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(e => console.log(e));
+      while (chatIceQueue.length) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(chatIceQueue.shift())).catch(e => console.log(e));
       }
     } catch (err) {
       console.error("Error handling offer:", err);
@@ -264,10 +272,8 @@ socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      
-      // Flush queue AFTER setting remote description
-      while (pendingChatIce.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(e => console.log(e));
+      while (chatIceQueue.length) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(chatIceQueue.shift())).catch(e => console.log(e));
       }
     } catch (err) {
       console.error("Error handling answer:", err);
@@ -276,11 +282,10 @@ socket.on('webrtc-answer', async (answer) => {
 });
 
 socket.on('webrtc-ice', async (candidate) => {
-  // UPGRADED: If connection isn't ready yet, save it to the global queue. Never drop a packet.
-  if (peerConnection && peerConnection.remoteDescription) {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log(e));
+  if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log("ICE error:", e));
   } else {
-    pendingChatIce.push(candidate);
+    chatIceQueue.push(candidate);
   }
 });
 
@@ -471,8 +476,8 @@ async function startCallEngine() {
 socket.on('call-offer', async (offer) => {
   if (!isCallActive || !callConnection) return;
   await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  while (pendingCallIce.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(e => console.log(e));
+  while (callIceQueue.length) {
+    callConnection.addIceCandidate(new RTCIceCandidate(callIceQueue.shift())).catch(e => console.log(e));
   }
   const answer = await callConnection.createAnswer();
   await callConnection.setLocalDescription(answer);
@@ -482,16 +487,16 @@ socket.on('call-offer', async (offer) => {
 socket.on('call-answer', async (answer) => {
   if (!isCallActive || !callConnection) return;
   await callConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  while (pendingCallIce.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(e => console.log(e));
+  while (callIceQueue.length) {
+    callConnection.addIceCandidate(new RTCIceCandidate(callIceQueue.shift())).catch(e => console.log(e));
   }
 });
 
 socket.on('call-ice', async (candidate) => {
-  if (callConnection && callConnection.remoteDescription) {
+  if (callConnection && callConnection.remoteDescription && callConnection.remoteDescription.type) {
     callConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log(e));
   } else {
-    pendingCallIce.push(candidate);
+    callIceQueue.push(candidate); 
   }
 });
 
@@ -585,9 +590,8 @@ function performLocalPurge() {
   if (callConnection) { callConnection.close(); callConnection = null; }
   if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
 
-  // UPGRADED: Flush the global queues on purge
-  pendingChatIce = [];
-  pendingCallIce = [];
+  chatIceQueue = [];
+  callIceQueue = [];
 
   document.getElementById('messages-container').innerHTML = '';
   document.getElementById('chat-view').classList.add('hidden');

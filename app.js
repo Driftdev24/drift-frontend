@@ -72,11 +72,22 @@ let isCallActive = false;
 
 let confirmCallback = null;
 
+// UPGRADED: Added TURN servers to punch through strict Wi-Fi and Cellular Firewalls
 const rtcConfig = { 
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' },
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    }
   ] 
 };
 
@@ -163,6 +174,8 @@ function handleJoin(e) {
       isCreator = false;
       setupWebRTC();
       openChatInterface();
+      // NEW: Show that the Joiner successfully reached the room
+      displaySystemMessage('[SYSTEM] Room joined. Negotiating secure P2P tunnel...', 'normal');
     } else {
       document.getElementById('error-message').textContent = 'Incorrect Room ID or Password.';
     }
@@ -205,6 +218,9 @@ function setupDataChannel() {
 }
 
 socket.on('peer-joined', async () => {
+  // NEW: Show the Creator that the peer successfully arrived
+  displaySystemMessage('[SYSTEM] Peer detected. Negotiating secure P2P tunnel...', 'normal');
+  
   if (isCreator) {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);

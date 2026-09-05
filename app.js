@@ -12,6 +12,17 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+/* // DISABLED TEMPORARILY FOR TESTING 
+// Remove the /* and */ /* to re-enable before public launch
+setInterval(() => {
+  const start = performance.now();
+  debugger; 
+  if (performance.now() - start > 100) {
+    triggerTamperLockdown();
+  }
+}, 1000);
+*/
+
 function triggerTamperLockdown() {
   document.body.innerHTML = `
     <div style="background:#000; color:red; height:100vh; width:100vw; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:monospace; text-align:center; padding: 20px;">
@@ -54,11 +65,11 @@ let isCallActive = false;
 
 let confirmCallback = null;
 
-// TURN + STUN configuration to bypass router and network firewalls
+// UPGRADED: Added robust STUNs and TCP TURN fallback to penetrate Carrier-Grade NATs
 const rtcConfig = { 
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
     {
       urls: "turn:openrelay.metered.ca:80",
@@ -67,6 +78,11 @@ const rtcConfig = {
     },
     {
       urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
       username: "openrelayproject",
       credential: "openrelayproject"
     }
@@ -182,27 +198,27 @@ function setupWebRTC() {
       socket.emit('webrtc-ice', event.candidate);
     }
   };
+  
+  // NEW: Real-time diagnostic state monitor
+  peerConnection.onconnectionstatechange = () => {
+    if (peerConnection.connectionState === 'connected') {
+       displaySystemMessage('[SYSTEM] P2P Encrypted Tunnel fully stabilized.', 'success');
+    } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+       displaySystemMessage('[ERROR] Network firewall severely blocked the connection.', 'danger');
+    }
+  };
 
-  if (isCreator) {
-    // Creator creates the data channel
-    dataChannel = peerConnection.createDataChannel('drift-chat');
-    setupDataChannel();
-  } else {
-    // Joiner listens for the incoming data channel
-    peerConnection.ondatachannel = (event) => {
-      dataChannel = event.channel;
-      setupDataChannel();
-    };
-  }
+  // UPGRADED: Out-of-band pre-negotiated data channel. Kills the handshake delay entirely.
+  dataChannel = peerConnection.createDataChannel('drift-chat', { negotiated: true, id: 0 });
+  setupDataChannel();
 }
 
 function setupDataChannel() {
-  dataChannel.onopen = () => displaySystemMessage('Secure connection established.', 'success');
+  dataChannel.onopen = () => displaySystemMessage('Secure connection active.', 'success');
   dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
   dataChannel.onmessage = (event) => renderMessage(JSON.parse(event.data), false);
 }
 
-// When joiner arrives, creator initiates the WebRTC offer
 socket.on('peer-joined', async () => {
   displaySystemMessage('[SYSTEM] Peer detected. Initiating handshake...', 'normal');
   if (isCreator) {
@@ -216,14 +232,12 @@ socket.on('peer-joined', async () => {
   }
 });
 
-// Joiner receives the offer, sets it, and sends back an answer
 socket.on('webrtc-offer', async (offer) => {
   if (!isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      while (chatIceQueue.length) {
-        peerConnection.addIceCandidate(chatIceQueue.shift());
-      }
+      while (chatIceQueue.length) peerConnection.addIceCandidate(chatIceQueue.shift());
+      
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc-answer', answer);
@@ -233,21 +247,17 @@ socket.on('webrtc-offer', async (offer) => {
   }
 });
 
-// Creator receives the answer from the joiner
 socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      while (chatIceQueue.length) {
-        peerConnection.addIceCandidate(chatIceQueue.shift());
-      }
+      while (chatIceQueue.length) peerConnection.addIceCandidate(chatIceQueue.shift());
     } catch (err) {
       console.error("Error handling answer:", err);
     }
   }
 });
 
-// Handle ICE candidates for both peers
 socket.on('webrtc-ice', async (candidate) => {
   if (!peerConnection) return;
   const ice = new RTCIceCandidate(candidate);
@@ -277,9 +287,13 @@ function handleSendText() {
   }
   
   const payload = { type: 'text', data: text };
-  dataChannel.send(JSON.stringify(payload));
-  renderMessage(payload, true);
-  input.value = '';
+  try {
+    dataChannel.send(JSON.stringify(payload));
+    renderMessage(payload, true);
+    input.value = '';
+  } catch(e) {
+    displaySystemMessage('[ERROR] Failed to send transmission. Connection unstable.', 'danger');
+  }
 }
 
 function handleFileSelect(event) {
@@ -299,8 +313,12 @@ function handleFileSelect(event) {
     const reader = new FileReader();
     reader.onload = (e) => {
       const payload = { type: 'file', mime: file.type, data: e.target.result };
-      dataChannel.send(JSON.stringify(payload));
-      renderMessage(payload, true);
+      try {
+        dataChannel.send(JSON.stringify(payload));
+        renderMessage(payload, true);
+      } catch (err) {
+        displaySystemMessage('[ERROR] File too large for instantaneous network channel buffer.', 'danger');
+      }
     };
     reader.readAsDataURL(file);
     event.target.value = ''; 
@@ -333,8 +351,12 @@ async function toggleMic() {
         reader.onload = (e) => {
           const payload = { type: 'file', mime: 'audio/webm', data: e.target.result };
           if (dataChannel && dataChannel.readyState === 'open') {
-            dataChannel.send(JSON.stringify(payload));
-            renderMessage(payload, true);
+            try {
+               dataChannel.send(JSON.stringify(payload));
+               renderMessage(payload, true);
+            } catch(err) {
+               displaySystemMessage('[ERROR] Audio payload crashed the connection buffer.', 'danger');
+            }
           }
         };
         reader.readAsDataURL(audioBlob);
@@ -354,7 +376,7 @@ async function toggleMic() {
   }
 }
 
-// --- CALLING SYSTEM ---
+// --- SECURE CALLING (UPGRADED SYNC) ---
 
 function requestCall(video) {
   if (isCallActive) return;
@@ -372,10 +394,12 @@ socket.on('call-request', (data) => {
   document.getElementById('incoming-call-modal').classList.remove('hidden');
 });
 
-function acceptCall() {
+// UPGRADE: Force receiver to get hardware access BEFORE accepting, killing the race condition
+async function acceptCall() {
   document.getElementById('incoming-call-modal').classList.add('hidden');
-  socket.emit('call-response', { accepted: true });
-  startCallEngine();
+  displaySystemMessage('[SYSTEM] Securing hardware access...', 'normal');
+  await startCallEngine(); // Receiver gets ready
+  socket.emit('call-response', { accepted: true }); // Then tells caller to proceed
 }
 
 function rejectCall() {
@@ -383,10 +407,10 @@ function rejectCall() {
   socket.emit('call-response', { accepted: false });
 }
 
-socket.on('call-response', (data) => {
+socket.on('call-response', async (data) => {
   if (data.accepted) {
     displaySystemMessage('Call accepted. Securing line...', 'success');
-    startCallEngine();
+    await startCallEngine(); // Caller gets ready and sends offer
   } else {
     displaySystemMessage(`Call declined${data.reason ? ' ('+data.reason+')' : ''}.`, 'danger');
     amICaller = false;

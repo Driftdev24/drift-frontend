@@ -12,17 +12,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-/* // DISABLED TEMPORARILY FOR TESTING 
-// Remove the /* and */ /* to re-enable before public launch
-setInterval(() => {
-  const start = performance.now();
-  debugger; 
-  if (performance.now() - start > 100) {
-    triggerTamperLockdown();
-  }
-}, 1000);
-*/
-
 function triggerTamperLockdown() {
   document.body.innerHTML = `
     <div style="background:#000; color:red; height:100vh; width:100vw; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:monospace; text-align:center; padding: 20px;">
@@ -34,16 +23,12 @@ function triggerTamperLockdown() {
   performLocalPurge();
 }
 
-
 // --- LAYER 2: CORE P2P LOGIC ---
 
-// UPDATED: Dynamic environment detection for separated hosting
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
   ? 'http://localhost:3000' 
-  : 'https://drift-backend-nkru.onrender.com'; // Your active Render URL
+  : 'https://drift-backend-nkru.onrender.com';
 
-// Initialize socket with the external URL or localhost
-// Include standard polling fallback for Vercel/Render
 const socket = io(BACKEND_URL, {
   transports: ['websocket', 'polling'] 
 });
@@ -51,18 +36,15 @@ const socket = io(BACKEND_URL, {
 let currentRoomId = null;
 let currentPassword = null;
 
-// P2P Data Variables
 let peerConnection;
 let dataChannel;
 let chatIceQueue = []; 
 let isCreator = false;
 
-// Media Variables
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-// Call Variables
 let callConnection = null;
 let callStream = null;
 let callIceQueue = []; 
@@ -72,7 +54,7 @@ let isCallActive = false;
 
 let confirmCallback = null;
 
-// UPGRADED: Added TURN servers to punch through strict Wi-Fi and Cellular Firewalls
+// TURN + STUN configuration to bypass router and network firewalls
 const rtcConfig = { 
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -174,7 +156,6 @@ function handleJoin(e) {
       isCreator = false;
       setupWebRTC();
       openChatInterface();
-      // NEW: Show that the Joiner successfully reached the room
       displaySystemMessage('[SYSTEM] Room joined. Negotiating secure P2P tunnel...', 'normal');
     } else {
       document.getElementById('error-message').textContent = 'Incorrect Room ID or Password.';
@@ -190,20 +171,24 @@ function openChatInterface() {
   document.getElementById('room-pass-display').textContent = currentPassword;
 }
 
-// --- SECURE TEXT & FILE WEBRTC ---
+// --- SYNCHRONIZED WEBRTC HANDSHAKE ---
 
 function setupWebRTC() {
   peerConnection = new RTCPeerConnection(rtcConfig);
   chatIceQueue = [];
 
   peerConnection.onicecandidate = (event) => {
-    if (event.candidate) socket.emit('webrtc-ice', event.candidate);
+    if (event.candidate) {
+      socket.emit('webrtc-ice', event.candidate);
+    }
   };
 
   if (isCreator) {
+    // Creator creates the data channel
     dataChannel = peerConnection.createDataChannel('drift-chat');
     setupDataChannel();
   } else {
+    // Joiner listens for the incoming data channel
     peerConnection.ondatachannel = (event) => {
       dataChannel = event.channel;
       setupDataChannel();
@@ -217,63 +202,80 @@ function setupDataChannel() {
   dataChannel.onmessage = (event) => renderMessage(JSON.parse(event.data), false);
 }
 
+// When joiner arrives, creator initiates the WebRTC offer
 socket.on('peer-joined', async () => {
-  // NEW: Show the Creator that the peer successfully arrived
-  displaySystemMessage('[SYSTEM] Peer detected. Negotiating secure P2P tunnel...', 'normal');
-  
+  displaySystemMessage('[SYSTEM] Peer detected. Initiating handshake...', 'normal');
   if (isCreator) {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('webrtc-offer', offer);
+    try {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit('webrtc-offer', offer);
+    } catch (err) {
+      console.error("Error creating offer:", err);
+    }
   }
 });
 
+// Joiner receives the offer, sets it, and sends back an answer
 socket.on('webrtc-offer', async (offer) => {
   if (!isCreator) {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    while(chatIceQueue.length) peerConnection.addIceCandidate(chatIceQueue.shift()); 
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit('webrtc-answer', answer);
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      while (chatIceQueue.length) {
+        peerConnection.addIceCandidate(chatIceQueue.shift());
+      }
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('webrtc-answer', answer);
+    } catch (err) {
+      console.error("Error handling offer:", err);
+    }
   }
 });
 
+// Creator receives the answer from the joiner
 socket.on('webrtc-answer', async (answer) => {
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  while(chatIceQueue.length) peerConnection.addIceCandidate(chatIceQueue.shift()); 
+  if (isCreator) {
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      while (chatIceQueue.length) {
+        peerConnection.addIceCandidate(chatIceQueue.shift());
+      }
+    } catch (err) {
+      console.error("Error handling answer:", err);
+    }
+  }
 });
 
+// Handle ICE candidates for both peers
 socket.on('webrtc-ice', async (candidate) => {
   if (!peerConnection) return;
   const ice = new RTCIceCandidate(candidate);
-  if (peerConnection.remoteDescription) {
-    peerConnection.addIceCandidate(ice).catch(e => console.error(e));
+  if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+    peerConnection.addIceCandidate(ice).catch(e => console.error("ICE error:", e));
   } else {
-    chatIceQueue.push(ice); 
+    chatIceQueue.push(ice);
   }
 });
 
-// --- MESSAGING (UPGRADED ERROR HANDLING) ---
+// --- MESSAGING ---
 
 function handleSendText() {
   const input = document.getElementById('message-input');
   const text = input.value.trim();
   
-  if (!text) return; // Don't send empty messages
+  if (!text) return;
 
-  // 1. Check if anyone else has even joined the room
   if (!dataChannel) {
-    displaySystemMessage('[SYSTEM ALERT] Cannot send: You are alone in the room. Waiting for a peer.', 'danger');
+    displaySystemMessage('[SYSTEM ALERT] Cannot send: You are alone in the room.', 'danger');
     return;
   }
   
-  // 2. Check if the network is blocking the P2P connection
   if (dataChannel.readyState !== 'open') {
-    displaySystemMessage(`[SYSTEM ALERT] Cannot send: Connection is blocked or pending (State: ${dataChannel.readyState}).`, 'danger');
+    displaySystemMessage(`[SYSTEM ALERT] Cannot send: Connection is pending (State: ${dataChannel.readyState}).`, 'danger');
     return;
   }
   
-  // 3. If everything is secure, send the message
   const payload = { type: 'text', data: text };
   dataChannel.send(JSON.stringify(payload));
   renderMessage(payload, true);
@@ -282,7 +284,7 @@ function handleSendText() {
 
 function handleFileSelect(event) {
   if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[SYSTEM ALERT] Cannot send file: Connection is not ready or you are alone.', 'danger');
+    displaySystemMessage('[SYSTEM ALERT] Cannot send file: Connection is not ready.', 'danger');
     return;
   }
   const file = event.target.files[0];
@@ -309,7 +311,7 @@ async function toggleMic() {
   const micBtn = document.getElementById('mic-btn');
   
   if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[SYSTEM ALERT] Cannot record voice: Connection is not ready or you are alone.', 'danger');
+    displaySystemMessage('[SYSTEM ALERT] Cannot record voice: Connection is not ready.', 'danger');
     return;
   }
   
@@ -343,7 +345,7 @@ async function toggleMic() {
       isRecording = true;
       micBtn.classList.add('recording');
     } catch (err) {
-      displaySystemMessage('[ERROR] Microphone access denied or requires HTTPS connection.', 'danger');
+      displaySystemMessage('[ERROR] Microphone access denied.', 'danger');
     }
   } else {
     mediaRecorder.stop();
@@ -352,7 +354,7 @@ async function toggleMic() {
   }
 }
 
-// --- SECURE LIVE CALLING ---
+// --- CALLING SYSTEM ---
 
 function requestCall(video) {
   if (isCallActive) return;
@@ -423,11 +425,7 @@ async function startCallEngine() {
     }
 
   } catch (err) {
-    let errorMsg = "Error accessing media devices.";
-    if (err.name === 'NotAllowedError') errorMsg = "Camera/Mic permission denied.";
-    else if (!navigator.mediaDevices) errorMsg = "Calls require an HTTPS connection.";
-    
-    displaySystemMessage(`[CALL FAILED] ${errorMsg}`, 'danger');
+    displaySystemMessage(`[CALL FAILED] Media access denied.`, 'danger');
     endCall();
   }
 }
@@ -499,7 +497,7 @@ function toggleCallCam() {
   }
 }
 
-// --- RENDER TEXT/FILE UI ---
+// --- UI RENDERING ---
 
 function renderMessage(payload, isMe) {
   const container = document.getElementById('messages-container');

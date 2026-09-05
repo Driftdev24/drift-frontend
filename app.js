@@ -44,13 +44,40 @@ const socket = io(BACKEND_URL, {
   transports: ['websocket', 'polling'] 
 });
 
+// =========================================================================
+// 🛑 EXPRESSTURN SERVER CONFIGURATION (FIREWALL BYPASS)
+// Look at the screenshot you uploaded and paste the exact strings below!
+// =========================================================================
+const rtcConfig = { 
+  iceServers: [
+    // Standard STUN Servers (Keep these for fast local discovery)
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    
+    // YOUR EXPRESSTURN CREDENTIALS
+    {
+      urls: [
+        "turn:free.expressturn.com:3478?transport=udp", // Verify this URL matches your screenshot
+        "turn:free.expressturn.com:3478?transport=tcp",
+        "turns:free.expressturn.com:5349?transport=tcp"
+      ],
+      username: "000000002103972211",  // Copy directly from ExpressTURN
+      credential: "Z3WQQwReDRX41Vl1sjRp9j/vFnI=" // Copy directly from ExpressTURN
+    }
+  ],
+  iceCandidatePoolSize: 10 
+};
+
 let currentRoomId = null;
 let currentPassword = null;
 
 let peerConnection;
 let dataChannel;
-let chatIceQueue = []; 
 let isCreator = false;
+
+let pendingChatIce = []; 
+let pendingCallIce = []; 
 
 let mediaRecorder;
 let audioChunks = [];
@@ -58,38 +85,11 @@ let isRecording = false;
 
 let callConnection = null;
 let callStream = null;
-let callIceQueue = []; 
 let isVideoCall = false;
 let amICaller = false;
 let isCallActive = false;
 
 let confirmCallback = null;
-
-// UPGRADED: Maximum Redundancy Array for cross-browser NAT traversal
-const rtcConfig = { 
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.services.mozilla.com' },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    }
-  ],
-  iceCandidatePoolSize: 10 // Pre-fetches network coordinates to kill the connection delay
-};
 
 window.addEventListener('beforeunload', (e) => {
   if (currentRoomId) {
@@ -203,7 +203,6 @@ function setupWebRTC() {
     }
   };
 
-  // NEW: Advanced Browser Shield / Adblocker detection
   peerConnection.onicegatheringstatechange = () => {
     if (peerConnection.iceGatheringState === 'complete' && !hasIceCandidates) {
        displaySystemMessage('[WARNING] WebRTC is blocked by your browser! If using Brave, lower your Shields. If using Opera/Edge, disable Tracking Prevention.', 'danger');
@@ -213,7 +212,7 @@ function setupWebRTC() {
   peerConnection.onconnectionstatechange = () => {
     if (peerConnection.connectionState === 'connected') {
        displaySystemMessage('[SYSTEM] P2P Encrypted Tunnel fully stabilized.', 'success');
-    } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+    } else if (peerConnection.connectionState === 'failed') {
        displaySystemMessage('[ERROR] Network firewall severely blocked the connection.', 'danger');
     }
   };
@@ -259,8 +258,8 @@ socket.on('webrtc-offer', async (offer) => {
       await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc-answer', answer);
 
-      while (chatIceQueue.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(chatIceQueue.shift())).catch(e => console.log(e));
+      while (pendingChatIce.length) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(e => console.log(e));
       }
     } catch (err) {
       console.error("Error handling offer:", err);
@@ -272,8 +271,8 @@ socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      while (chatIceQueue.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(chatIceQueue.shift())).catch(e => console.log(e));
+      while (pendingChatIce.length) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(e => console.log(e));
       }
     } catch (err) {
       console.error("Error handling answer:", err);
@@ -285,7 +284,7 @@ socket.on('webrtc-ice', async (candidate) => {
   if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
     peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log("ICE error:", e));
   } else {
-    chatIceQueue.push(candidate);
+    pendingChatIce.push(candidate);
   }
 });
 
@@ -476,8 +475,8 @@ async function startCallEngine() {
 socket.on('call-offer', async (offer) => {
   if (!isCallActive || !callConnection) return;
   await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  while (callIceQueue.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(callIceQueue.shift())).catch(e => console.log(e));
+  while (pendingCallIce.length) {
+    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(e => console.log(e));
   }
   const answer = await callConnection.createAnswer();
   await callConnection.setLocalDescription(answer);
@@ -487,8 +486,8 @@ socket.on('call-offer', async (offer) => {
 socket.on('call-answer', async (answer) => {
   if (!isCallActive || !callConnection) return;
   await callConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  while (callIceQueue.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(callIceQueue.shift())).catch(e => console.log(e));
+  while (pendingCallIce.length) {
+    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(e => console.log(e));
   }
 });
 
@@ -496,7 +495,7 @@ socket.on('call-ice', async (candidate) => {
   if (callConnection && callConnection.remoteDescription && callConnection.remoteDescription.type) {
     callConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.log(e));
   } else {
-    callIceQueue.push(candidate); 
+    pendingCallIce.push(candidate); 
   }
 });
 
@@ -590,8 +589,8 @@ function performLocalPurge() {
   if (callConnection) { callConnection.close(); callConnection = null; }
   if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
 
-  chatIceQueue = [];
-  callIceQueue = [];
+  pendingChatIce = [];
+  pendingCallIce = [];
 
   document.getElementById('messages-container').innerHTML = '';
   document.getElementById('chat-view').classList.add('hidden');

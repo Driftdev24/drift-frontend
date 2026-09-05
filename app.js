@@ -46,7 +46,6 @@ const socket = io(BACKEND_URL, {
 
 // =========================================================================
 // 🛑 EXPRESSTURN SERVER CONFIGURATION (FIREWALL BYPASS)
-// Look at the screenshot you uploaded and paste the exact strings below!
 // =========================================================================
 const rtcConfig = { 
   iceServers: [
@@ -58,12 +57,12 @@ const rtcConfig = {
     // YOUR EXPRESSTURN CREDENTIALS
     {
       urls: [
-        "turn:free.expressturn.com:3478?transport=udp", // Verify this URL matches your screenshot
+        "turn:free.expressturn.com:3478?transport=udp",
         "turn:free.expressturn.com:3478?transport=tcp",
         "turns:free.expressturn.com:5349?transport=tcp"
       ],
-      username: "000000002103972211",  // Copy directly from ExpressTURN
-      credential: "Z3WQQwReDRX41Vl1sjRp9j/vFnI=" // Copy directly from ExpressTURN
+      username: "000000002103972211",  
+      credential: "Z3WQQwReDRX41Vl1sjRp9j/vFnI=" 
     }
   ],
   iceCandidatePoolSize: 10 
@@ -85,7 +84,6 @@ let isRecording = false;
 
 let callConnection = null;
 let callStream = null;
-let isVideoCall = false;
 let amICaller = false;
 let isCallActive = false;
 
@@ -96,6 +94,39 @@ window.addEventListener('beforeunload', (e) => {
     e.preventDefault();
     e.returnValue = 'Warning: Refreshing the page will permanently destroy this chat.';
   }
+});
+
+// --- UI EFFECTS (LIQUID GLASS & OBFUSCATION) ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Flashlight hover effect for liquid glass panels
+    const panels = document.querySelectorAll('.glass-panel');
+    panels.forEach(panel => {
+        panel.addEventListener('mousemove', (e) => {
+            const rect = panel.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            panel.style.background = `radial-gradient(circle at ${x}px ${y}px, rgba(0, 255, 102, 0.05), rgba(0, 255, 102, 0.01) 40%)`;
+        });
+        panel.addEventListener('mouseleave', () => {
+            panel.style.background = 'var(--glass-bg)';
+        });
+    });
+
+    // Text obfuscation click-to-reveal
+    const obfuscatedElements = document.querySelectorAll('.obfuscated');
+    obfuscatedElements.forEach(el => {
+        const maskedText = el.innerText;
+        const realText = el.getAttribute('data-reveal');
+        el.addEventListener('click', function() {
+            if (this.classList.contains('revealed')) {
+                this.innerText = maskedText;
+                this.classList.remove('revealed');
+            } else {
+                this.innerText = realText;
+                this.classList.add('revealed');
+            }
+        });
+    });
 });
 
 function switchTab(tab) {
@@ -396,21 +427,19 @@ async function toggleMic() {
   }
 }
 
-// --- SECURE CALLING ---
+// --- SECURE CALLING (VOICE ONLY) ---
 
-function requestCall(video) {
+function requestCall() {
   if (isCallActive) return;
-  isVideoCall = video;
   amICaller = true;
-  socket.emit('call-request', { isVideo: video });
-  displaySystemMessage(`Dialing peer for ${video ? 'Video' : 'Voice'} Call...`);
+  socket.emit('call-request', { isVideo: false }); // Force false
+  displaySystemMessage(`Dialing peer for Secure Voice Call...`);
 }
 
 socket.on('call-request', (data) => {
   if (isCallActive) return socket.emit('call-response', { accepted: false, reason: 'Busy' });
-  isVideoCall = data.isVideo;
   amICaller = false;
-  document.getElementById('incoming-call-type').textContent = `Incoming ${isVideoCall ? 'Video' : 'Voice'} Call`;
+  document.getElementById('incoming-call-type').textContent = `Incoming Voice Call`;
   document.getElementById('incoming-call-modal').classList.remove('hidden');
 });
 
@@ -439,12 +468,11 @@ socket.on('call-response', async (data) => {
 async function startCallEngine() {
   isCallActive = true;
   document.getElementById('call-ui').classList.remove('hidden');
-  document.getElementById('call-status-text').textContent = isVideoCall ? 'SECURE VIDEO ACTIVE' : 'SECURE VOICE ACTIVE';
-  document.getElementById('local-video').style.display = isVideoCall ? 'block' : 'none';
+  document.getElementById('call-status-text').textContent = 'SECURE VOICE ACTIVE';
   
   try {
-    callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoCall });
-    document.getElementById('local-video').srcObject = callStream;
+    // STRICTLY AUDIO - This prevents the getUserMedia crash
+    callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 
     callConnection = new RTCPeerConnection(rtcConfig);
     
@@ -452,8 +480,12 @@ async function startCallEngine() {
       if (event.candidate) socket.emit('call-ice', event.candidate);
     };
 
+    // Attach incoming stream to the audio tag
     callConnection.ontrack = (event) => {
-      document.getElementById('remote-video').srcObject = event.streams[0];
+      const remoteAudio = document.getElementById('remote-audio');
+      if (remoteAudio.srcObject !== event.streams[0]) {
+          remoteAudio.srcObject = event.streams[0];
+      }
     };
 
     callStream.getTracks().forEach(track => {
@@ -467,7 +499,7 @@ async function startCallEngine() {
     }
 
   } catch (err) {
-    displaySystemMessage(`[CALL FAILED] Media access denied.`, 'danger');
+    displaySystemMessage(`[CALL FAILED] Microphone access denied or unavailable.`, 'danger');
     endCall();
   }
 }
@@ -513,8 +545,8 @@ function endCall() {
     callConnection = null;
   }
   
-  document.getElementById('local-video').srcObject = null;
-  document.getElementById('remote-video').srcObject = null;
+  // Clear the audio tag instead of video
+  document.getElementById('remote-audio').srcObject = null;
   document.getElementById('call-ui').classList.add('hidden');
   
   socket.emit('call-end');
@@ -529,15 +561,6 @@ function toggleCallMic() {
   if (audioTrack) {
     audioTrack.enabled = !audioTrack.enabled;
     document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)';
-  }
-}
-
-function toggleCallCam() {
-  if (!callStream) return;
-  const videoTrack = callStream.getVideoTracks()[0];
-  if (videoTrack) {
-    videoTrack.enabled = !videoTrack.enabled;
-    document.getElementById('toggle-call-cam-btn').style.color = videoTrack.enabled ? 'inherit' : 'var(--danger)';
   }
 }
 

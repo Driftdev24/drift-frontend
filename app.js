@@ -1,3 +1,40 @@
+// --- LAYER 1: ANTI-INSPECT SHIELD ---
+document.addEventListener('contextmenu', event => event.preventDefault());
+
+document.addEventListener('keydown', (e) => {
+  if (
+    e.key === 'F12' || 
+    (e.ctrlKey && e.shiftKey && ['I', 'i', 'J', 'j', 'C', 'c'].includes(e.key)) || 
+    (e.ctrlKey && ['U', 'u'].includes(e.key))
+  ) {
+    e.preventDefault();
+    triggerTamperLockdown();
+  }
+});
+
+/* // DISABLED TEMPORARILY FOR TESTING 
+// Remove the /* and */ /* to re-enable before public launch
+setInterval(() => {
+  const start = performance.now();
+  debugger; 
+  if (performance.now() - start > 100) {
+    triggerTamperLockdown();
+  }
+}, 1000);
+*/
+
+function triggerTamperLockdown() {
+  document.body.innerHTML = `
+    <div style="background:#000; color:red; height:100vh; width:100vw; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:monospace; text-align:center; padding: 20px;">
+      <h1 style="font-size:2rem; margin-bottom:10px;">SECURITY LOCKDOWN</h1>
+      <p style="font-size:1rem;">Developer tools are disabled for your privacy. Please refresh to try again.</p>
+    </div>
+  `;
+  if (typeof socket !== 'undefined' && socket) socket.disconnect();
+  performLocalPurge();
+}
+
+
 // --- LAYER 2: CORE P2P LOGIC ---
 
 // UPDATED: Dynamic environment detection for separated hosting
@@ -200,14 +237,27 @@ socket.on('webrtc-ice', async (candidate) => {
   }
 });
 
-// --- MESSAGING ---
+// --- MESSAGING (UPGRADED ERROR HANDLING) ---
 
 function handleSendText() {
-  if (!dataChannel || dataChannel.readyState !== 'open') return;
   const input = document.getElementById('message-input');
   const text = input.value.trim();
-  if (!text) return;
   
+  if (!text) return; // Don't send empty messages
+
+  // 1. Check if anyone else has even joined the room
+  if (!dataChannel) {
+    displaySystemMessage('[SYSTEM ALERT] Cannot send: You are alone in the room. Waiting for a peer.', 'danger');
+    return;
+  }
+  
+  // 2. Check if the network is blocking the P2P connection
+  if (dataChannel.readyState !== 'open') {
+    displaySystemMessage(`[SYSTEM ALERT] Cannot send: Connection is blocked or pending (State: ${dataChannel.readyState}).`, 'danger');
+    return;
+  }
+  
+  // 3. If everything is secure, send the message
   const payload = { type: 'text', data: text };
   dataChannel.send(JSON.stringify(payload));
   renderMessage(payload, true);
@@ -215,7 +265,10 @@ function handleSendText() {
 }
 
 function handleFileSelect(event) {
-  if (!dataChannel || dataChannel.readyState !== 'open') return;
+  if (!dataChannel || dataChannel.readyState !== 'open') {
+    displaySystemMessage('[SYSTEM ALERT] Cannot send file: Connection is not ready or you are alone.', 'danger');
+    return;
+  }
   const file = event.target.files[0];
   if (!file) return;
 
@@ -238,6 +291,11 @@ function handleFileSelect(event) {
 
 async function toggleMic() {
   const micBtn = document.getElementById('mic-btn');
+  
+  if (!dataChannel || dataChannel.readyState !== 'open') {
+    displaySystemMessage('[SYSTEM ALERT] Cannot record voice: Connection is not ready or you are alone.', 'danger');
+    return;
+  }
   
   if (!isRecording) {
     try {

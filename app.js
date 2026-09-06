@@ -687,6 +687,7 @@ setInterval(() => {
 document.addEventListener('DOMContentLoaded', () => {
     const agreeBtn = document.getElementById('agree-manifesto-btn');
     const timerDisplay = document.getElementById('manifesto-timer');
+    const largeTimerDisplay = document.getElementById('large-manifesto-timer');
     
     // 180 seconds = 3 minutes
     let timeLeft = 180; 
@@ -707,13 +708,24 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateTimerDisplay() {
         const minutes = Math.floor(timeLeft / 60);
         const seconds = timeLeft % 60;
+        const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
         if (timerDisplay) {
-            timerDisplay.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
+            timerDisplay.textContent = `(${formattedTime})`;
+        }
+        if (largeTimerDisplay) {
+            largeTimerDisplay.textContent = formattedTime;
         }
     }
 
     function unlockManifesto() {
         if (timerDisplay) timerDisplay.textContent = '';
+        if (largeTimerDisplay) {
+            largeTimerDisplay.textContent = '00:00';
+            largeTimerDisplay.style.color = 'var(--primary)';
+            largeTimerDisplay.classList.remove('pulse-text');
+        }
+
         if (agreeBtn) {
             agreeBtn.textContent = 'I UNDERSTAND AND AGREE';
             agreeBtn.disabled = false;

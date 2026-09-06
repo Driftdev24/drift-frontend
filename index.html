@@ -3,56 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Drift | Secure Workspace</title>
+  <title>Drift | Secure Terminal</title>
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
+  <!-- Dynamic Background: Fading Grid & Data Streams -->
+  <div class="bg-grid"></div>
+  <div class="data-stream stream-1"></div>
+  <div class="data-stream stream-2"></div>
+  <div class="data-stream stream-3"></div>
+
   <!-- THE DRIFT MANIFESTO -->
   <div id="manifesto-overlay" class="modal" style="z-index: 999999; display: flex;">
-    <div class="modal-content editorial-panel" style="max-height: 90vh; display: flex; flex-direction: column;">
+    <div class="modal-content security-panel">
       
-      <div class="editorial-header">
-        <h1>The Drift Manifesto</h1>
-        <p>Initialization Protocol</p>
+      <div class="panel-header">
+        <svg class="header-icon" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.8 1.4 2.8 2.8V11c.6 0 1.2.6 1.2 1.2v3.6c0 .6-.6 1.2-1.2 1.2H9.2c-.6 0-1.2-.6-1.2-1.2v-3.6c0-.6.6-1.2 1.2-1.2V9.8C9.2 8.4 10.6 7 12 7zm0 1.2c-.7 0-1.6.8-1.6 1.6V11h3.2V9.8c0-.8-.9-1.6-1.6-1.6z"/></svg>
+        <div class="header-title">
+          <h1>The Drift Manifesto</h1>
+          <p>Initialization Protocol</p>
+        </div>
       </div>
 
       <div class="manifesto-scroll-area">
         <section class="manifesto-section">
-          <h3>Our Mission & Vision</h3>
-          <p>Our mission is to restore the fundamental human right to digital privacy. We envision an internet where conversations are fleeting, untracked, and entirely owned by the participants. Modern communication systems are built on surveillance. Drift exists to break that cycle by introducing absolute digital ephemerality.</p>
+          <h3>Mission Parameters</h3>
+          <p>Our mission is to restore the fundamental human right to digital privacy. We envision a network where conversations are fleeting, untracked, and entirely owned by the participants. Drift introduces absolute digital ephemerality.</p>
         </section>
 
         <section class="manifesto-section">
           <h3>The Architecture of Silence</h3>
-          <p>Mainstream applications rely on central servers that act as middlemen. Drift eliminates the middleman. By utilizing a strict Peer-to-Peer architecture, a direct, encrypted tunnel is formed exclusively between your two devices.</p>
+          <p>Mainstream systems rely on central servers acting as middlemen. Drift eliminates them. Utilizing a strict Peer-to-Peer architecture, a direct, encrypted tunnel is formed exclusively between endpoints.</p>
         </section>
 
         <section class="manifesto-section highlight-section">
           <h3>Absolute Zero-Data Guarantee</h3>
-          <p><strong>Even the creator of this system cannot see what you type or send.</strong> Drift possesses zero databases. When you refresh the page or sever the connection, your data ceases to exist permanently.</p>
+          <p><strong>Even the system creator cannot intercept your data.</strong> Drift possesses zero databases. When the connection is severed, your transit data ceases to exist permanently.</p>
         </section>
 
         <div class="critical-warning-box">
-          <h3>Security Advisory</h3>
-          <p>Drift is fully anonymous. You can never be absolutely certain of who is on the other end unless verified externally.</p>
+          <div class="warning-header">
+            <svg viewBox="0 0 24 24" class="icon-danger"><path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 16h2v2h-2zm0-6h2v5h-2z"/></svg>
+            <h3>Security Advisory</h3>
+          </div>
+          <p>Drift is anonymous. You cannot verify peer identity within this system.</p>
           <ul>
             <li>Beware of social engineering tactics.</li>
-            <li>Never transmit financial assets or credentials to unverified peers.</li>
-            <li>This protocol is engineered for privacy, not the facilitation of harm.</li>
+            <li>Never transmit financial assets to unverified peers.</li>
+            <li>This protocol is for privacy, not the facilitation of harm.</li>
           </ul>
         </div>
       </div>
 
       <div class="timer-readout">
-        <span class="timer-label">MANDATORY READING TIME</span>
+        <span class="timer-label">CLEARANCE TIMER</span>
         <div id="large-manifesto-timer" class="timer-value">05</div>
       </div>
 
       <div class="action-footer">
         <button id="agree-manifesto-btn" class="btn-primary disabled-btn" disabled>
-          Acknowledge & Proceed <span id="manifesto-timer">(5)</span>
+          ACKNOWLEDGE <span id="manifesto-timer">(5)</span>
         </button>
       </div>
 
@@ -60,43 +72,64 @@
   </div>
   
   <div class="app-window" id="main-app">
+    <!-- Circuit Border Accents -->
+    <div class="circuit-node top-left"></div>
+    <div class="circuit-node top-right"></div>
+    <div class="circuit-node bottom-left"></div>
+    <div class="circuit-node bottom-right"></div>
+    <div class="circuit-trace trace-top"></div>
     
     <!-- Info Button -->
     <button class="nav-btn" onclick="openInfoModal()" title="System Architecture">
-      <svg viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M8.93 6.588l-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
     </button>
 
     <!-- LOBBY VIEW -->
     <div id="lobby-view" class="view-panel">
       <div class="brand-header">
-        <h2>Drift Protocol</h2>
-        <p>Secure Ephemeral Communicator</p>
+        <!-- Abstract Anonymous Silhouette -->
+        <svg class="brand-logo" viewBox="0 0 24 24">
+          <path d="M12 2C9.24 2 7 4.24 7 7c0 2.22 1.45 4.1 3.47 4.75C6.08 12.63 3 15.82 3 19.5V22h18v-2.5c0-3.68-3.08-6.87-7.47-7.75C15.55 11.1 17 9.22 17 7c0-2.76-2.24-5-5-5zm0 2c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"/>
+        </svg>
+        <div class="brand-text">
+          <h2>DRIFT PROTOCOL</h2>
+          <p>Secure Ephemeral Communicator</p>
+        </div>
       </div>
 
       <div class="tabs">
-        <button id="tab-create-btn" class="tab active" onclick="switchTab('create')">Initialize</button>
-        <button id="tab-join-btn" class="tab" onclick="switchTab('join')">Connect</button>
+        <button id="tab-create-btn" class="tab active" onclick="switchTab('create')">INITIALIZE</button>
+        <button id="tab-join-btn" class="tab" onclick="switchTab('join')">CONNECT</button>
       </div>
 
       <div class="form-container">
         <form id="create-form" onsubmit="handleCreate(event)">
           <div class="input-group">
             <label>Encryption Key</label>
-            <input type="password" id="create-password" placeholder="Define a secure passphrase" required />
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+              <input type="password" id="create-password" placeholder="Define a secure passphrase" required />
+            </div>
           </div>
-          <button type="submit" class="btn-primary">Deploy Secure Room</button>
+          <button type="submit" class="btn-primary">DEPLOY SECURE ROOM</button>
         </form>
 
         <form id="join-form" class="hidden" onsubmit="handleJoin(event)">
           <div class="input-group">
             <label>Transmission ID</label>
-            <input type="text" id="join-code" placeholder="Enter Room ID" required />
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+              <input type="text" id="join-code" placeholder="Enter Room ID" required />
+            </div>
           </div>
           <div class="input-group">
             <label>Encryption Key</label>
-            <input type="password" id="join-password" placeholder="Enter passphrase" required />
+            <div class="input-wrapper">
+              <svg class="input-icon" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+              <input type="password" id="join-password" placeholder="Enter passphrase" required />
+            </div>
           </div>
-          <button type="submit" class="btn-primary">Establish Connection</button>
+          <button type="submit" class="btn-primary">ESTABLISH CONNECTION</button>
         </form>
       </div>
 
@@ -105,9 +138,12 @@
 
     <!-- SUCCESS VIEW -->
     <div id="success-view" class="view-panel hidden">
-      <div class="brand-header">
-        <h2>Airlock Secured</h2>
-        <p>Transmit these coordinates securely to your peer.</p>
+      <div class="brand-header center">
+        <svg class="brand-logo success-color" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+        <div class="brand-text">
+          <h2>AIRLOCK SECURED</h2>
+          <p>Transmit coordinates securely to your peer.</p>
+        </div>
       </div>
       
       <div class="credentials-card">
@@ -127,7 +163,7 @@
           <button class="btn-icon" onclick="copyData('disp-pass', this)">COPY</button>
         </div>
       </div>
-      <button class="btn-primary" onclick="enterGeneratedRoom()">Enter Workspace</button>
+      <button class="btn-primary" onclick="enterGeneratedRoom()">ENTER TERMINAL</button>
     </div>
 
     <!-- CHAT VIEW -->
@@ -139,21 +175,23 @@
           <div class="status-indicator"></div>
           <div class="room-tags">
             <div class="tag" onclick="quickCopyText('room-code-display', 'copy-icon-id')" title="Copy ID">
-              ID: <span id="room-code-display">---</span>
-              <span id="copy-icon-id" class="tag-icon">⎘</span>
+              <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/></svg>
+              <span id="room-code-display">---</span>
+              <span id="copy-icon-id" class="tag-copy-icon">⎘</span>
             </div>
             <div class="tag" onclick="quickCopyText('room-pass-display', 'copy-icon-key')" title="Copy Key">
-              KEY: <span id="room-pass-display">---</span>
-              <span id="copy-icon-key" class="tag-icon">⎘</span>
+              <svg viewBox="0 0 24 24"><path d="M12.65 10c-.82-2.33-3.04-4-5.65-4-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+              <span id="room-pass-display">---</span>
+              <span id="copy-icon-key" class="tag-copy-icon">⎘</span>
             </div>
           </div>
         </div>
 
         <div class="header-actions">
-          <button class="btn-outline" onclick="requestCall()" title="Initiate Voice Call">
-            <svg viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328z"/></svg>
+          <button class="btn-outline btn-square" onclick="requestCall()" title="Initiate Voice Call">
+            <svg viewBox="0 0 24 24"><path d="M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1zM19 12h2c0-4.97-4.03-9-9-9v2c3.87 0 7 3.13 7 7z"/></svg>
           </button>
-          <button class="btn-danger" onclick="requestPurge()">Sever Connection</button>
+          <button class="btn-danger" onclick="requestPurge()">SEVER</button>
         </div>
       </header>
 
@@ -163,15 +201,15 @@
 
       <!-- Input Area -->
       <div id="chat-controls" class="input-area">
-        <button class="btn-icon-large" title="Attach Media" onclick="document.getElementById('media-upload').click()">
-          <svg viewBox="0 0 16 16"><path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 1 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3z"/></svg>
+        <button class="btn-square action-btn" title="Attach Media" onclick="document.getElementById('media-upload').click()">
+          <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"/></svg>
         </button>
-        <button class="btn-icon-large" id="mic-btn" title="Voice Note" onclick="toggleMic()">
-          <svg viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
+        <button class="btn-square action-btn" id="mic-btn" title="Voice Note" onclick="toggleMic()">
+          <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
         </button>
-        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" onkeypress="if(event.key === 'Enter') handleSendText()" />
+        <input type="text" id="message-input" placeholder="Initiate transmission..." autocomplete="off" onkeypress="if(event.key === 'Enter') handleSendText()" />
         <button class="btn-submit" onclick="handleSendText()">
-          <svg viewBox="0 0 16 16"><path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm-.889-.89-4.338-2.762L13.424 1.87 5.747 9.18Z"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
         </button>
       </div>
     </div>
@@ -179,16 +217,23 @@
     <!-- AUDIO UI -->
     <div id="call-ui" class="modal hidden">
       <div class="call-panel">
-        <h3 id="call-status-text">Secure Frequency Active</h3>
+        <h3 id="call-status-text">SECURE FREQUENCY ACTIVE</h3>
         <div class="audio-wave-container">
           <audio id="remote-audio" autoplay playsinline></audio>
-          <div class="static-wave"></div>
+          <!-- Abstract Data Stream Visualizer -->
+          <div class="wave-bar w1"></div>
+          <div class="wave-bar w2"></div>
+          <div class="wave-bar w3"></div>
+          <div class="wave-bar w4"></div>
+          <div class="wave-bar w3"></div>
+          <div class="wave-bar w2"></div>
+          <div class="wave-bar w1"></div>
         </div>
         <div class="call-actions">
-          <button class="btn-icon-large" id="toggle-call-mic-btn" onclick="toggleCallMic()">
-            <svg viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
+          <button class="btn-square action-btn" id="toggle-call-mic-btn" onclick="toggleCallMic()">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
           </button>
-          <button class="btn-danger-solid" onclick="endCall()">Disconnect</button>
+          <button class="btn-danger-solid" onclick="endCall()">DISCONNECT</button>
         </div>
       </div>
     </div>
@@ -200,25 +245,31 @@
 
     <div id="incoming-call-modal" class="modal hidden">
       <div class="dialog-panel">
+        <svg class="dialog-icon pulse" viewBox="0 0 24 24"><path d="M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1zM19 12h2c0-4.97-4.03-9-9-9v2c3.87 0 7 3.13 7 7z"/></svg>
         <h3>Incoming Transmission</h3>
         <p id="incoming-call-type">Peer is requesting a voice handshake...</p>
         <div class="dialog-actions">
-          <button class="btn-outline" onclick="rejectCall()">Decline</button>
-          <button class="btn-primary" onclick="acceptCall()">Accept</button>
+          <button class="btn-outline" onclick="rejectCall()">DECLINE</button>
+          <button class="btn-primary" onclick="acceptCall()">ACCEPT</button>
         </div>
       </div>
     </div>
 
     <div id="info-modal" class="modal hidden">
-      <div class="editorial-panel">
-        <button class="close-btn" onclick="closeModal('info-modal')">✕</button>
-        <div class="editorial-header">
-          <h2>The Drift Protocol</h2>
+      <div class="security-panel">
+        <button class="close-btn" onclick="closeModal('info-modal')">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+        <div class="panel-header">
+          <svg class="header-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <div class="header-title">
+            <h2>System Architecture</h2>
+          </div>
         </div>
         <div class="manifesto-scroll-area">
           <section class="manifesto-section">
             <h3>Architecture of Silence</h3>
-            <p>Modern communication systems are built on a foundation of data retention. Drift was engineered to eliminate the server from the conversation entirely. It is a digital dead-drop.</p>
+            <p>Modern communication systems are built on data retention. Drift was engineered to eliminate the server from the conversation entirely. It is a digital dead-drop.</p>
           </section>
           <section class="manifesto-section">
             <h3>Technical Implementation</h3>
@@ -234,19 +285,21 @@
 
     <div id="confirm-modal" class="modal hidden">
       <div class="dialog-panel">
+        <svg class="dialog-icon warning-color" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 16h2v2h-2zm0-6h2v5h-2z"/></svg>
         <h3 id="confirm-title">Confirm Action</h3>
         <p id="confirm-message"></p>
         <div class="dialog-actions">
-          <button class="btn-outline" onclick="cancelConfirm()">Cancel</button>
-          <button class="btn-danger-solid" onclick="executeConfirm()">Proceed</button>
+          <button class="btn-outline" onclick="cancelConfirm()">ABORT</button>
+          <button class="btn-danger-solid" onclick="executeConfirm()">PROCEED</button>
         </div>
       </div>
     </div>
 
     <div id="purge-alert" class="modal hidden">
       <div class="alert-panel">
-        <h2>Tunnel Severed</h2>
-        <p>Connection terminated. All local and transit data has been purged.</p>
+        <svg class="alert-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        <h2>TUNNEL SEVERED</h2>
+        <p>Connection terminated. All local and transit data has been purged from memory.</p>
       </div>
     </div>
 

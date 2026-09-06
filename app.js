@@ -681,60 +681,60 @@ setInterval(() => {
 }, Math.random() * 4000 + 2000);
 
 // =========================================================================
-// MANDATORY MANIFESTO TIMER (3 MINUTES)
+// MANDATORY MANIFESTO TIMER (5 SECONDS)
 // =========================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    const agreeBtn = document.getElementById('agree-manifesto-btn');
-    const timerDisplay = document.getElementById('manifesto-timer');
-    const largeTimerDisplay = document.getElementById('large-manifesto-timer');
-    
-    // 180 seconds = 3 minutes
-    let timeLeft = 180; 
+  const agreeBtn = document.getElementById('agree-manifesto-btn');
+  const timerDisplay = document.getElementById('manifesto-timer');
+  const largeTimerDisplay = document.getElementById('large-manifesto-timer');
+  
+  // 5 seconds
+  let timeLeft = 5; 
 
-    // Initial display
-    updateTimerDisplay();
+  // Initial display
+  updateTimerDisplay();
 
-    const timerInterval = setInterval(() => {
-        timeLeft--;
-        updateTimerDisplay();
+  const timerInterval = setInterval(() => {
+      timeLeft--;
+      updateTimerDisplay();
 
-        if (timeLeft <= 0) {
-            clearInterval(timerInterval);
-            unlockManifesto();
-        }
-    }, 1000);
+      if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          unlockManifesto();
+      }
+  }, 1000);
 
-    function updateTimerDisplay() {
-        const minutes = Math.floor(timeLeft / 60);
-        const seconds = timeLeft % 60;
-        const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        
-        if (timerDisplay) {
-            timerDisplay.textContent = `(${formattedTime})`;
-        }
-        if (largeTimerDisplay) {
-            largeTimerDisplay.textContent = formattedTime;
-        }
-    }
+  function updateTimerDisplay() {
+      const minutes = Math.floor(timeLeft / 60);
+      const seconds = timeLeft % 60;
+      const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      
+      if (timerDisplay) {
+          timerDisplay.textContent = `(${formattedTime})`;
+      }
+      if (largeTimerDisplay) {
+          largeTimerDisplay.textContent = formattedTime;
+      }
+  }
 
-    function unlockManifesto() {
-        if (timerDisplay) timerDisplay.textContent = '';
-        if (largeTimerDisplay) {
-            largeTimerDisplay.textContent = '00:00';
-            largeTimerDisplay.style.color = 'var(--primary)';
-            largeTimerDisplay.classList.remove('pulse-text');
-        }
+  function unlockManifesto() {
+      if (timerDisplay) timerDisplay.textContent = '';
+      if (largeTimerDisplay) {
+          largeTimerDisplay.textContent = '00:00';
+          largeTimerDisplay.style.color = 'var(--primary)';
+          largeTimerDisplay.classList.remove('pulse-text');
+      }
 
-        if (agreeBtn) {
-            agreeBtn.textContent = 'I UNDERSTAND AND AGREE';
-            agreeBtn.disabled = false;
-            agreeBtn.classList.remove('disabled-btn');
-            
-            // Add click event to dismiss the overlay once unlocked
-            agreeBtn.addEventListener('click', () => {
-                document.getElementById('manifesto-overlay').classList.add('hidden');
-            });
-        }
-    }
+      if (agreeBtn) {
+          agreeBtn.textContent = 'I UNDERSTAND AND AGREE';
+          agreeBtn.disabled = false;
+          agreeBtn.classList.remove('disabled-btn');
+          
+          // Add click event to dismiss the overlay once unlocked
+          agreeBtn.addEventListener('click', () => {
+              document.getElementById('manifesto-overlay').classList.add('hidden');
+          });
+      }
+  }
 });

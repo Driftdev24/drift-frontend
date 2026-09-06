@@ -5,47 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Drift | Secure Chat</title>
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Added Space Grotesk for sleek, modern, formal headings -->
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-  <!-- THE DRIFT MANIFESTO (Mandatory 5-Seconds Overlay) -->
-  <div id="manifesto-overlay" class="modal" style="z-index: 999999; background: var(--bg-base); display: flex;">
-    <div class="modal-content info-panel-large glass-panel" style="max-height: 95vh; display: flex; flex-direction: column;">
+  <!-- Cyber-Grid Background Overlay (Replaces the blurry orbs for a stealthier look) -->
+  <div class="cyber-grid"></div>
+  <div class="ambient-glow"></div>
+
+  <!-- THE DRIFT MANIFESTO -->
+  <div id="manifesto-overlay" class="modal" style="z-index: 999999; display: flex;">
+    <div class="modal-content info-panel-large stealth-panel" style="max-height: 95vh; display: flex; flex-direction: column;">
       
-      <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color:var(--primary); font-family:'Fira Code', monospace; letter-spacing: 3px; font-size: 2rem;">THE DRIFT MANIFESTO</h1>
-        <p style="color:var(--muted); font-size:0.85rem; text-transform: uppercase;">Please read carefully. You must wait 5 seconds before proceeding.</p>
+      <div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid var(--glass-border); padding-bottom: 15px;">
+        <h1 class="glitch-text" style="color:var(--primary); font-family:'Space Grotesk', sans-serif; letter-spacing: 4px; font-size: 2.2rem; text-transform: uppercase;">The Drift Manifesto</h1>
+        <p style="color:var(--accent); font-size:0.85rem; text-transform: uppercase; font-family: 'Fira Code', monospace; letter-spacing: 1px;">Establishing Secure Handshake...</p>
       </div>
 
       <div class="manifesto-scroll-area" style="overflow-y: auto; padding-right: 15px; flex-grow: 1; margin-bottom: 10px;">
-        
-        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">Our Mission & Vision</h3>
-        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace;">
+        <h3 class="manifesto-heading">Our Mission & Vision</h3>
+        <p class="manifesto-text">
           Our mission is to restore the fundamental human right to digital privacy. We envision an internet where conversations are fleeting, untracked, and entirely owned by the participants. Modern communication systems are built on surveillance—they log your metadata, store your text, track your IP address, and commodify your data. Drift exists to break that cycle by introducing absolute digital ephemerality.
         </p>
 
-        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">The Problem & Our Solution</h3>
-        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace;">
+        <h3 class="manifesto-heading">The Problem & Our Solution</h3>
+        <p class="manifesto-text">
           Even so-called "End-to-End Encrypted" mainstream applications rely on central servers that act as middlemen. Drift eliminates the middleman. By utilizing a strict Peer-to-Peer (WebRTC) architecture, Drift only uses a server for the initial "handshake." Once you and your peer connect, a direct, encrypted tunnel is formed between your two devices.
         </p>
 
-        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">Absolute Zero-Data Guarantee</h3>
-        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace; border-left: 3px solid var(--primary); padding-left: 10px;">
+        <h3 class="manifesto-heading">Absolute Zero-Data Guarantee</h3>
+        <p class="manifesto-text" style="border-left: 3px solid var(--primary); padding-left: 15px; background: linear-gradient(90deg, rgba(0,255,102,0.05) 0%, transparent 100%);">
           <strong>Even the creator of this system cannot see what you type, send, or say.</strong> Drift possesses zero databases for message storage. We do not have the data, we do not want the data, and we lack the technical capability to view, intercept, or manipulate your conversations. When you refresh the page or close the tab, your data ceases to exist permanently.
         </p>
 
-        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">An Independent Passion Project</h3>
-        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace;">
+        <h3 class="manifesto-heading">An Independent Passion Project</h3>
+        <p class="manifesto-text">
           Drift is not supported, funded, or endorsed by any corporation, government, or external entity. It is a standalone system built purely out of passion and the goal of creating a paradigm shift in how we handle online privacy.
         </p>
 
-        <div style="border: 1px dashed var(--danger); padding: 20px; border-radius: 8px; background: rgba(255,51,51,0.05); margin-bottom: 10px;">
-          <h3 style="color:var(--danger); font-size:1.1rem; margin-bottom:10px; text-transform: uppercase; text-align: center;" class="pulse-text">CRITICAL SECURITY WARNING</h3>
-          <p style="color:var(--text); font-size:0.85rem; line-height:1.6; font-family:'Fira Code', monospace; margin-bottom: 15px; text-align: justify;">
+        <div class="critical-warning-box">
+          <h3 style="color:var(--danger); font-size:1.1rem; margin-bottom:10px; text-transform: uppercase; text-align: center; font-family: 'Space Grotesk', sans-serif; letter-spacing: 2px;" class="pulse-text">Critical Security Warning</h3>
+          <p style="color:var(--text); font-size:0.85rem; line-height:1.7; font-family:'Inter', sans-serif; margin-bottom: 15px; text-align: justify;">
             Drift is a fully anonymous system. Because there are no accounts or identity verifications, you can never be absolutely certain of who is on the other end of the screen unless you verify them outside of this app.
           </p>
-          <ul style="color:var(--danger); font-size:0.85rem; line-height:1.6; padding-left:20px; font-family:'Fira Code', monospace; font-weight: bold;">
+          <ul style="color:var(--danger); font-size:0.85rem; line-height:1.7; padding-left:20px; font-family:'Fira Code', monospace;">
             <li style="margin-bottom: 10px;">Beware of the risks of social engineering.</li>
             <li style="margin-bottom: 10px;">Always think critically, especially if the topic shifts to financial transactions. NEVER send money, crypto, or sensitive credentials to unverified individuals. Scammers operate in anonymous spaces.</li>
             <li>Drift is not connected to, nor does it condone, any illegal activities. This tool is for privacy, not for causing harm.</li>
@@ -54,14 +58,14 @@
       </div>
 
       <!-- Large Countdown Timer -->
-      <div style="text-align: center; margin: 15px 0; padding: 20px; background: rgba(0,0,0,0.6); border-radius: 12px; border: 1px solid var(--glass-border); box-shadow: inset 0 0 20px rgba(0,0,0,0.8);">
-        <p style="color:var(--muted); font-size: 0.85rem; font-family:'Fira Code', monospace; text-transform: uppercase; margin-bottom: 5px;">Mandatory Reading Time Remaining</p>
-        <div id="large-manifesto-timer" class="pulse-text" style="font-size: 4rem; color: var(--danger); font-family: 'JetBrains Mono', monospace; font-weight: bold; letter-spacing: 5px; text-shadow: 0 0 15px rgba(255, 51, 51, 0.5);">5</div>
+      <div class="timer-container">
+        <p style="color:var(--muted); font-size: 0.75rem; font-family:'Fira Code', monospace; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 2px;">Mandatory Reading Time</p>
+        <div id="large-manifesto-timer" class="pulse-text" style="font-size: 3.5rem; color: var(--danger); font-family: 'JetBrains Mono', monospace; font-weight: 700; letter-spacing: 5px; text-shadow: 0 0 20px rgba(255, 51, 51, 0.4);">5</div>
       </div>
 
       <!-- Action Button -->
-      <div style="padding-top: 15px; border-top: 1px solid var(--glass-border); text-align: center;">
-        <button id="agree-manifesto-btn" class="btn disabled-btn" disabled style="width: 100%; transition: all 0.3s ease;">
+      <div style="padding-top: 20px; text-align: center;">
+        <button id="agree-manifesto-btn" class="btn disabled-btn" disabled style="width: 100%; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
           READING REQUIRED <span id="manifesto-timer" style="margin-left: 8px;">(5)</span>
         </button>
       </div>
@@ -69,15 +73,10 @@
     </div>
   </div>
   
-  <!-- Liquid Background Orbs -->
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-  <div class="orb orb-3"></div>
-
   <div class="app-container" id="main-app">
     
     <!-- Info Button -->
-    <button class="info-btn glass-panel" onclick="openInfoModal()" title="System Architecture & Usage">
+    <button class="info-btn stealth-panel" onclick="openInfoModal()" title="System Architecture & Usage">
       <svg class="svg-icon" viewBox="0 0 16 16">
         <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
         <path d="M8.93 6.588l-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
@@ -85,45 +84,47 @@
     </button>
 
     <!-- LOBBY VIEW -->
-    <div id="lobby-view" class="card glass-panel">
+    <div id="lobby-view" class="card stealth-panel">
       <div class="brand">
         <svg class="brand-banner-svg" width="100%" height="120" xmlns="http://www.w3.org/2000/svg">
           <image href="1.jpg" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" />
         </svg>
+        <h2>DRIFT PROTOCOL</h2>
+        <p class="subtitle">SECURE EPHEMERAL COMMUNICATOR</p>
       </div>
 
       <div class="tabs">
-        <button id="tab-create-btn" class="tab active" onclick="switchTab('create')">Create Chat</button>
-        <button id="tab-join-btn" class="tab" onclick="switchTab('join')">Join Chat</button>
+        <button id="tab-create-btn" class="tab active" onclick="switchTab('create')">Initialize Chat</button>
+        <button id="tab-join-btn" class="tab" onclick="switchTab('join')">Connect Peer</button>
       </div>
 
       <form id="create-form" onsubmit="handleCreate(event)">
         <div class="field">
-          <label>Set a Password</label>
-          <input type="password" id="create-password" placeholder="Create a secure password" required />
+          <label>Encryption Key (Password)</label>
+          <input type="password" id="create-password" placeholder="Generate a secure passphrase" required />
         </div>
-        <button type="submit" class="btn">Create Chat Room</button>
+        <button type="submit" class="btn">Deploy Secure Room</button>
       </form>
 
       <form id="join-form" class="hidden" onsubmit="handleJoin(event)">
         <div class="field">
-          <label>Room ID</label>
-          <input type="text" id="join-code" placeholder="Paste the Room ID here" required />
+          <label>Transmission ID</label>
+          <input type="text" id="join-code" placeholder="Paste Room ID" required />
         </div>
         <div class="field">
-          <label>Password</label>
-          <input type="password" id="join-password" placeholder="Enter the room password" required />
+          <label>Encryption Key</label>
+          <input type="password" id="join-password" placeholder="Enter passphrase" required />
         </div>
-        <button type="submit" class="btn">Join Conversation</button>
+        <button type="submit" class="btn">Establish Connection</button>
       </form>
 
       <div id="error-message" class="error-msg"></div>
     </div>
 
     <!-- SUCCESS VIEW -->
-    <div id="success-view" class="card glass-panel hidden">
-      <div class="brand"><h2>Chat Created</h2></div>
-      <p class="subtitle" style="margin-bottom:20px;">Share these details with your peer.</p>
+    <div id="success-view" class="card stealth-panel hidden">
+      <div class="brand"><h2>Airlock Secured</h2></div>
+      <p class="subtitle" style="margin-bottom:25px;">Transmit these coordinates to your peer via a secure out-of-band channel.</p>
       
       <div class="success-box">
         <div class="data-row">
@@ -135,144 +136,139 @@
           <button class="copy-btn" onclick="copyData('disp-pass', this)">COPY</button>
         </div>
       </div>
-      <button class="btn" onclick="enterGeneratedRoom()">Go to Chat & Wait</button>
+      <button class="btn" onclick="enterGeneratedRoom()">Enter Terminal & Await Peer</button>
     </div>
 
-    <!-- CHAT VIEW (Bento Structure) -->
+    <!-- CHAT VIEW (EXPANDED BENTO GRID) -->
     <div id="chat-view" class="hidden bento-grid">
       
       <!-- Bento Box 1: Header -->
-      <div class="chat-header glass-panel bento-box">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <svg class="chat-logo-svg" width="45" height="45" xmlns="http://www.w3.org/2000/svg">
+      <div class="chat-header stealth-panel bento-box">
+        <div style="display: flex; align-items: center; gap: 15px;">
+          <svg class="chat-logo-svg" width="50" height="50" xmlns="http://www.w3.org/2000/svg">
             <image href="2.jpg" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" />
           </svg>
           <div class="room-credentials-box">
             <div class="credential-item" onclick="quickCopyText('room-code-display', 'copy-icon-id')" title="Click to copy">
-              <span class="cred-label">ROOM:</span> <span id="room-code-display" class="cred-value">---</span> 
+              <span class="cred-label">ID:</span> <span id="room-code-display" class="cred-value">---</span> 
               <span id="copy-icon-id"><svg class="svg-icon" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg></span>
             </div>
             <div class="credential-item" onclick="quickCopyText('room-pass-display', 'copy-icon-key')" title="Click to copy">
-              <span class="cred-label">PASS:</span> <span id="room-pass-display" class="cred-value">---</span> 
+              <span class="cred-label">KEY:</span> <span id="room-pass-display" class="cred-value">---</span> 
               <span id="copy-icon-key"><svg class="svg-icon" viewBox="0 0 16 16"><path d="M3.5 11.5a3.5 3.5 0 1 1 3.163-5H14L15.5 8 14 9.5l-1-1-1 1-1-1-1 1-1-1-1 1H6.663a3.5 3.5 0 0 1-3.163 2zM2.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg></span>
             </div>
           </div>
         </div>
 
-        <div style="display: flex; gap: 8px;">
-          <button class="icon-btn" onclick="requestCall()" title="Voice Call" style="width:36px; height:36px; padding:0;">
+        <div style="display: flex; gap: 12px;">
+          <button class="icon-btn action-glow" onclick="requestCall()" title="Initiate Secure Voice Call">
             <svg class="svg-icon" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328zM1.884.511a1.745 1.745 0 0 1 2.612.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.51.51 0 0 0 .146.518l2.922 2.922a.51.51 0 0 0 .518.146l2.19-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/></svg>
           </button>
-          <button class="danger-btn" onclick="requestPurge()" title="Destroy Chat">[ Leave ]</button>
+          <button class="danger-btn" onclick="requestPurge()" title="Sever Connection & Purge Data">SEVER</button>
         </div>
       </div>
 
-      <!-- Bento Box 2: Messages -->
-      <div id="messages-container" class="messages-box glass-panel bento-box"></div>
+      <!-- Bento Box 2: Messages (Now much taller) -->
+      <div id="messages-container" class="messages-box stealth-panel bento-box"></div>
       <input type="file" id="media-upload" accept="image/*" class="hidden" onchange="handleFileSelect(event)" />
 
       <!-- Bento Box 3: Controls -->
-      <div id="chat-controls" class="glass-panel bento-box">
-        <button class="icon-btn" title="Send Image" onclick="document.getElementById('media-upload').click()">
+      <div id="chat-controls" class="stealth-panel bento-box">
+        <button class="icon-btn" title="Transmit Media" onclick="document.getElementById('media-upload').click()">
           <svg class="svg-icon" viewBox="0 0 16 16"><path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 1 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3z"/></svg>
         </button>
-        <button class="icon-btn" id="mic-btn" title="Record Voice Message" onclick="toggleMic()">
+        <button class="icon-btn" id="mic-btn" title="Transmit Audio Payload" onclick="toggleMic()">
           <svg class="svg-icon" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
         </button>
-        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" onkeypress="if(event.key === 'Enter') handleSendText()" />
-        <button class="icon-btn" onclick="handleSendText()" style="border-color:var(--primary); color:var(--primary)">
+        <input type="text" id="message-input" placeholder="Initiate transmission..." autocomplete="off" onkeypress="if(event.key === 'Enter') handleSendText()" />
+        <button class="send-btn" onclick="handleSendText()">
           <svg class="svg-icon" viewBox="0 0 16 16"><path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm-.889-.89-4.338-2.762L13.424 1.87 5.747 9.18Z"/></svg>
         </button>
       </div>
     </div>
 
-    <!-- MODALS -->
+    <!-- AUDIO UI / MODALS (Design updated to match stealth theme) -->
     
     <!-- Audio-Only Call UI -->
-    <div id="call-ui" class="modal hidden" style="flex-direction: column; z-index: 10000;">
-      <h3 id="call-status-text" class="pulse-text" style="color: var(--primary); margin-bottom: 20px; font-family: 'Fira Code', monospace; text-transform: uppercase;">SECURE VOICE CALL ACTIVE</h3>
+    <div id="call-ui" class="modal hidden" style="flex-direction: column; z-index: 10000; backdrop-filter: blur(20px);">
+      <h3 id="call-status-text" class="pulse-text glitch-text" style="color: var(--accent); margin-bottom: 25px; font-family: 'Space Grotesk', sans-serif; text-transform: uppercase; font-size: 1.5rem; letter-spacing: 2px;">SECURE FREQUENCY ACTIVE</h3>
       
-      <div style="position: relative; width: 100%; max-width: 400px; display: flex; justify-content: center; align-items: center; border: 1px solid var(--primary); box-shadow: 0 0 30px var(--primary-glow); border-radius: 12px; background: #000; min-height: 200px;">
+      <div class="audio-visualizer-mock">
         <audio id="remote-audio" autoplay playsinline></audio>
-        
-        <!-- Audio Visualizer Mock -->
-        <svg class="svg-icon pulse-text" style="width: 60px; height: 60px; color: var(--primary);" viewBox="0 0 16 16">
+        <div class="radar-sweep"></div>
+        <svg class="svg-icon pulse-text" style="width: 70px; height: 70px; color: var(--accent); position: relative; z-index: 2;" viewBox="0 0 16 16">
           <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
           <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
         </svg>
       </div>
 
-      <div style="margin-top: 20px; display: flex; gap: 15px; justify-content: center;">
-        <button class="icon-btn glass-panel" id="toggle-call-mic-btn" onclick="toggleCallMic()" title="Toggle Microphone" style="height: 45px; width: 45px; padding: 0;">
+      <div style="margin-top: 30px; display: flex; gap: 20px; justify-content: center;">
+        <button class="icon-btn stealth-panel action-glow" id="toggle-call-mic-btn" onclick="toggleCallMic()" title="Toggle Microphone" style="height: 55px; width: 55px; border-radius: 50%;">
           <svg class="svg-icon" viewBox="0 0 16 16"><path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/><path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/></svg>
         </button>
-        <button class="danger-btn glass-panel" onclick="endCall()" style="font-size: 1rem; padding: 10px 20px;">[ END CALL ]</button>
+        <button class="danger-btn stealth-panel" onclick="endCall()" style="font-size: 1.1rem; padding: 0 30px; border-radius: 30px;">DISCONNECT</button>
       </div>
     </div>
 
-    <!-- Media Modal -->
+    <!-- Remaining modals preserved, simply styled by the new CSS -->
     <div id="media-modal" class="modal hidden" onclick="closeModal('media-modal')">
       <span class="close-modal">&times;</span>
-      <img id="modal-img" class="modal-content glass-panel" style="padding: 5px;">
+      <img id="modal-img" class="modal-content stealth-panel" style="padding: 10px; border-color: var(--accent);">
     </div>
 
-    <!-- Incoming Call Modal -->
     <div id="incoming-call-modal" class="modal hidden">
-      <div class="modal-content info-panel glass-panel" style="border-color:var(--primary); text-align:center;">
-        <h3 style="color:var(--primary); margin-bottom:10px;" class="pulse-text">INCOMING TRANSMISSION</h3>
-        <p id="incoming-call-type" style="color:var(--text); font-size:1rem; margin-bottom:25px; font-family:'Fira Code', monospace;">Peer is calling...</p>
-        <div style="display:flex; gap:10px;">
-          <button class="btn" style="border-color:var(--danger); color:var(--danger); background:rgba(255,51,51,0.1);" onclick="rejectCall()">REJECT</button>
-          <button class="btn" style="border-color:var(--primary); color:var(--primary); background:rgba(0,255,102,0.1);" onclick="acceptCall()">ACCEPT</button>
+      <div class="modal-content info-panel stealth-panel" style="border-color:var(--accent); text-align:center;">
+        <h3 style="color:var(--accent); margin-bottom:15px; font-family: 'Space Grotesk', sans-serif;" class="pulse-text">INCOMING TRANSMISSION</h3>
+        <p id="incoming-call-type" style="color:var(--text); font-size:0.95rem; margin-bottom:30px; font-family:'Fira Code', monospace;">Peer is requesting a voice handshake...</p>
+        <div style="display:flex; gap:15px;">
+          <button class="btn" style="border-color:var(--danger); color:var(--danger); background:rgba(255,51,51,0.05);" onclick="rejectCall()">REJECT</button>
+          <button class="btn" style="border-color:var(--accent); color:var(--accent); background:rgba(0, 229, 255, 0.05);" onclick="acceptCall()">ACCEPT</button>
         </div>
       </div>
     </div>
 
-    <!-- Info Modal -->
     <div id="info-modal" class="modal hidden">
-      <div class="modal-content info-panel-large glass-panel">
-        <span class="close-modal" onclick="closeModal('info-modal')" style="right: 15px; top: 15px; font-size: 25px;">&times;</span>
-        <h2 style="color:var(--primary); margin-bottom:25px; text-transform:uppercase; text-align:center; letter-spacing: 2px;">The Drift Protocol</h2>
+      <div class="modal-content info-panel-large stealth-panel">
+        <span class="close-modal" onclick="closeModal('info-modal')" style="right: 20px; top: 20px;">&times;</span>
+        <h2 style="color:var(--primary); margin-bottom:25px; text-transform:uppercase; text-align:center; font-family: 'Space Grotesk', sans-serif; letter-spacing: 3px;">The Drift Protocol</h2>
         
-        <h3 style="color:var(--primary); font-size:1rem; margin-bottom:10px;">The Problem Drift Solves</h3>
-        <p style="color:var(--text); font-size:0.8rem; line-height:1.6; font-family:'Fira Code', monospace; margin-bottom:10px;">Modern communication systems are built on a foundation of data retention. Even mainstream "end-to-end encrypted" messaging applications rely on central servers that hoard metadata. They track who you talk to, when you log in, your IP address, and your device information.</p>
-        <p style="color:var(--text); font-size:0.8rem; line-height:1.6; font-family:'Fira Code', monospace; margin-bottom:20px;">The internet has lost the concept of a truly private, fleeting conversation. Drift was created to fix this flaw by eliminating the server from the conversation entirely.</p>
+        <h3 class="manifesto-heading">The Architecture of Silence</h3>
+        <p class="manifesto-text">Modern communication systems are built on a foundation of data retention. Even mainstream "end-to-end encrypted" messaging applications rely on central servers that hoard metadata. They track who you talk to, when you log in, your IP address, and your device information.</p>
+        <p class="manifesto-text">Drift was engineered to eliminate the server from the conversation entirely. It is a digital dead-drop.</p>
 
-        <h3 style="color:var(--primary); font-size:1rem; margin-bottom:10px;">How Drift Works (Technical Architecture)</h3>
-        <p style="color:var(--text); font-size:0.8rem; line-height:1.6; font-family:'Fira Code', monospace; margin-bottom:10px;">Drift achieves total ephemerality through a strict Peer-to-Peer (P2P) architecture.</p>
-        <ul style="color:var(--text); font-size:0.8rem; line-height:1.6; padding-left:15px; font-family:'Fira Code', monospace; margin-bottom: 25px;">
-          <li style="margin-bottom:8px;"><b>The Signaling Phase:</b> The server acts merely as a temporary switchboard to exchange connection coordinates.</li>
-          <li style="margin-bottom:8px;"><b>Direct Encrypted Tunnel:</b> Devices establish a direct WebRTC RTCDataChannel. The server steps completely out of the way.</li>
-          <li style="margin-bottom:8px;"><b>Absolute Erasure:</b> If either user refreshes the page, loses internet, or clicks "Leave," the P2P tunnel instantly collapses. The data vanishes permanently.</li>
+        <h3 class="manifesto-heading">Technical Implementation</h3>
+        <p class="manifesto-text">Drift achieves total ephemerality through a strict Peer-to-Peer (P2P) architecture.</p>
+        <ul style="color:var(--text); font-size:0.85rem; line-height:1.7; padding-left:20px; font-family:'Inter', sans-serif; margin-bottom: 25px;">
+          <li style="margin-bottom:10px;"><strong style="color:var(--primary)">The Signaling Phase:</strong> The server acts merely as a temporary switchboard to exchange connection coordinates.</li>
+          <li style="margin-bottom:10px;"><strong style="color:var(--primary)">Direct Encrypted Tunnel:</strong> Devices establish a direct WebRTC RTCDataChannel. The server steps completely out of the way.</li>
+          <li style="margin-bottom:10px;"><strong style="color:var(--primary)">Absolute Erasure:</strong> If either user refreshes the page, loses internet, or clicks "Sever," the P2P tunnel instantly collapses. The data vanishes permanently.</li>
         </ul>
 
-        <div style="border: 1px dashed var(--danger); padding: 15px; border-radius: 8px; background: rgba(255,51,51,0.05); margin-bottom: 25px;">
-          <h3 style="color:var(--danger); font-size:0.95rem; margin-bottom:10px; text-transform: uppercase; text-align: center;">Official Security and Usage Disclaimer</h3>
-          <p style="color:var(--text); font-size:0.75rem; line-height:1.5; font-family:'Fira Code', monospace; margin-bottom: 10px; text-align: justify;">Drift is a privacy-first communication tool engineered strictly to protect the fundamental human right to secure, private conversation. It is built for individuals, professionals, and organizations who require absolute confidentiality.</p>
-          <p style="color:var(--danger); font-size:0.8rem; font-weight: bold; line-height:1.5; font-family:'Fira Code', monospace; margin-bottom: 10px; text-align: center; text-transform: uppercase;">Drift is not designed, intended, or endorsed for the facilitation of any illegal activities.</p>
+        <div class="critical-warning-box">
+          <h3 style="color:var(--danger); font-size:1rem; margin-bottom:10px; text-transform: uppercase; text-align: center; font-family: 'Space Grotesk', sans-serif;">Official Usage Disclaimer</h3>
+          <p style="color:var(--text); font-size:0.8rem; line-height:1.6; font-family:'Inter', sans-serif; margin-bottom: 10px; text-align: justify;">Drift is a privacy-first communication tool engineered strictly to protect the fundamental human right to secure, private conversation. It is built for individuals, professionals, and organizations who require absolute confidentiality.</p>
+          <p style="color:var(--danger); font-size:0.85rem; font-weight: bold; line-height:1.6; font-family:'Fira Code', monospace; margin-bottom: 5px; text-align: center; text-transform: uppercase;">Drift is not designed, intended, or endorsed for the facilitation of any illegal activities.</p>
         </div>
 
-        <button class="btn" style="width: 100%; margin-top: 10px;" onclick="closeModal('info-modal')">I HAVE READ AND AGREE</button>
+        <button class="btn" style="width: 100%; margin-top: 15px;" onclick="closeModal('info-modal')">ACKNOWLEDGE</button>
       </div>
     </div>
 
-    <!-- Confirm Modal -->
     <div id="confirm-modal" class="modal hidden">
-      <div class="modal-content info-panel glass-panel" style="border-color:var(--danger); text-align:center;">
-        <h3 id="confirm-title" style="color:var(--danger); margin-bottom:10px;">Are you sure?</h3>
-        <p id="confirm-message" style="color:var(--text); font-size:0.85rem; margin-bottom:20px; font-family:'Fira Code', monospace;"></p>
-        <div style="display:flex; gap:10px;">
-          <button class="btn" style="border-color:var(--muted); color:var(--muted); background:transparent;" onclick="cancelConfirm()">CANCEL</button>
-          <button class="btn" style="border-color:var(--danger); color:var(--danger); background:rgba(255,51,51,0.1);" onclick="executeConfirm()">YES, CONTINUE</button>
+      <div class="modal-content info-panel stealth-panel" style="border-color:var(--danger); text-align:center;">
+        <h3 id="confirm-title" style="color:var(--danger); margin-bottom:15px; font-family: 'Space Grotesk', sans-serif;">Confirm Action</h3>
+        <p id="confirm-message" style="color:var(--text); font-size:0.9rem; margin-bottom:25px; font-family:'Inter', sans-serif;"></p>
+        <div style="display:flex; gap:15px;">
+          <button class="btn" style="border-color:var(--muted); color:var(--muted); background:transparent;" onclick="cancelConfirm()">ABORT</button>
+          <button class="btn" style="border-color:var(--danger); color:var(--danger); background:rgba(255,51,51,0.05);" onclick="executeConfirm()">PROCEED</button>
         </div>
       </div>
     </div>
 
-    <!-- Purge Alert -->
     <div id="purge-alert" class="modal hidden" style="z-index:99999;">
-      <div class="modal-content info-panel glass-panel" style="border-color: var(--danger); text-align: center; padding: 30px;">
-        <h2 style="color: var(--danger); font-family: 'Fira Code', monospace; font-size: 2rem; margin-bottom: 10px; text-transform: uppercase;">Chat Destroyed</h2>
-        <p style="color: var(--text); font-family: 'Fira Code', monospace; font-size: 0.85rem;">The secure connection was closed. No data was saved.</p>
+      <div class="modal-content stealth-panel" style="border-color: var(--danger); text-align: center; padding: 40px; box-shadow: 0 0 50px rgba(255, 51, 51, 0.2);">
+        <h2 class="glitch-text" style="color: var(--danger); font-family: 'Space Grotesk', sans-serif; font-size: 2.5rem; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 3px;">Tunnel Severed</h2>
+        <p style="color: var(--text); font-family: 'Fira Code', monospace; font-size: 0.9rem;">Connection terminated. All local and transit data has been purged.</p>
       </div>
     </div>
 

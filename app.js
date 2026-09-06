@@ -169,7 +169,6 @@ function handleJoin(e) {
       openChatInterface();
       displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
     } else {
-      // The capacity limit error ("Room is already full") gets dynamically displayed here
       document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
     }
   });
@@ -680,3 +679,50 @@ setInterval(() => {
     dataChannel.send(JSON.stringify({ type: 'obfuscation', data: Array.from(garbage) }));
   }
 }, Math.random() * 4000 + 2000);
+
+// =========================================================================
+// MANDATORY MANIFESTO TIMER (3 MINUTES)
+// =========================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    const agreeBtn = document.getElementById('agree-manifesto-btn');
+    const timerDisplay = document.getElementById('manifesto-timer');
+    
+    // 180 seconds = 3 minutes
+    let timeLeft = 180; 
+
+    // Initial display
+    updateTimerDisplay();
+
+    const timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            unlockManifesto();
+        }
+    }, 1000);
+
+    function updateTimerDisplay() {
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        if (timerDisplay) {
+            timerDisplay.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
+        }
+    }
+
+    function unlockManifesto() {
+        if (timerDisplay) timerDisplay.textContent = '';
+        if (agreeBtn) {
+            agreeBtn.textContent = 'I UNDERSTAND AND AGREE';
+            agreeBtn.disabled = false;
+            agreeBtn.classList.remove('disabled-btn');
+            
+            // Add click event to dismiss the overlay once unlocked
+            agreeBtn.addEventListener('click', () => {
+                document.getElementById('manifesto-overlay').classList.add('hidden');
+            });
+        }
+    }
+});

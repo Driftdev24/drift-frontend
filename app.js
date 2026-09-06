@@ -9,6 +9,7 @@ const socket = io(BACKEND_URL, {
 let rtcConfig = null;
 let currentRoomId = null;
 let currentPassword = null;
+let e2eeKey = null; // Holds the AES-GCM encryption key in RAM
 
 let peerConnection;
 let dataChannel;
@@ -41,7 +42,72 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// UI Effects
+// ==========================================
+// MILITARY-GRADE E2EE CRYPTOGRAPHY ENGINE
+// ==========================================
+
+// Converts the plain text password into a secure AES-GCM crypto key
+async function setupE2EEKey(password) {
+  const enc = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.digest('SHA-256', enc.encode(password));
+  e2eeKey = await window.crypto.subtle.importKey(
+    'raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+  );
+}
+
+// Hashes the password for the server so the backend is completely blind to the real key
+async function hashPasswordForServer(password) {
+  const enc = new TextEncoder();
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', enc.encode(password + "drift_server_salt"));
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+}
+
+// Buffer to Base64 (For safe transmission)
+function bufferToBase64(buf) {
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+  return window.btoa(bin);
+}
+
+// Base64 to Buffer
+function base64ToBuffer(base64) {
+  const bin = window.atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// Encrypts the payload before it enters the WebRTC tunnel
+async function sendEncryptedPayload(payloadObj) {
+  if (!e2eeKey || !dataChannel || dataChannel.readyState !== 'open') return;
+  try {
+    const plainText = JSON.stringify(payloadObj);
+    const enc = new TextEncoder();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    
+    const ciphertext = await window.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv },
+      e2eeKey,
+      enc.encode(plainText)
+    );
+    
+    const encryptedPayload = {
+      e2ee: true,
+      iv: bufferToBase64(iv),
+      ct: bufferToBase64(ciphertext)
+    };
+    
+    dataChannel.send(JSON.stringify(encryptedPayload));
+  } catch (e) {
+    console.error("Encryption failed:", e);
+  }
+}
+
+// ==========================================
+// UI EFFECTS & UTILITIES
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
   const panels = document.querySelectorAll('.glass-panel');
   panels.forEach(panel => {
@@ -65,7 +131,6 @@ function switchTab(tab) {
   document.getElementById('tab-join-btn').classList.toggle('active', tab === 'join');
 }
 
-// Universal copy function compatible with iOS, Android, and non-HTTPS local testing
 function universalCopy(text) {
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text);
@@ -126,22 +191,29 @@ function cancelConfirm() {
 function openInfoModal() { document.getElementById('info-modal').classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
-// Handshake
-function handleCreate(e) {
+// ==========================================
+// SECURE HANDSHAKE
+// ==========================================
+async function handleCreate(e) {
   e.preventDefault();
   currentPassword = document.getElementById('create-password').value;
-  socket.emit('create-room', { password: currentPassword }, (res) => {
+  
+  // 1. Generate local encryption key
+  await setupE2EEKey(currentPassword);
+  // 2. Hash password for backend verification
+  const serverSafePassword = await hashPasswordForServer(currentPassword);
+
+  socket.emit('create-room', { password: serverSafePassword }, (res) => {
     if (res.success) {
       isCreator = true;
       currentRoomId = res.id;
       
-      // Receive ICE configuration directly from socket response
       rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
       
       document.getElementById('lobby-view').classList.add('hidden');
       document.getElementById('success-view').classList.remove('hidden');
       document.getElementById('disp-id').innerText = currentRoomId;
-      document.getElementById('disp-pass').innerText = currentPassword;
+      document.getElementById('disp-pass').innerText = currentPassword; // Display raw password to share with peer
       
       setupWebRTC();
     }
@@ -153,16 +225,19 @@ function enterGeneratedRoom() {
   displaySystemMessage('Waiting for your peer to join...');
 }
 
-function handleJoin(e) {
+async function handleJoin(e) {
   e.preventDefault();
   currentRoomId = document.getElementById('join-code').value.toUpperCase();
   currentPassword = document.getElementById('join-password').value;
 
-  socket.emit('join-room', { id: currentRoomId, password: currentPassword }, (res) => {
+  // 1. Generate local encryption key
+  await setupE2EEKey(currentPassword);
+  // 2. Hash password for backend verification
+  const serverSafePassword = await hashPasswordForServer(currentPassword);
+
+  socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
     if (res.success) {
       isCreator = false;
-      
-      // Receive ICE configuration directly from socket response
       rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
       
       if (!peerConnection) setupWebRTC(); 
@@ -182,7 +257,9 @@ function openChatInterface() {
   document.getElementById('room-pass-display').textContent = currentPassword;
 }
 
-// WebRTC Handshake
+// ==========================================
+// WEBRTC & DATA CHANNEL
+// ==========================================
 function setupWebRTC() {
   if (peerConnection || !rtcConfig) return; 
   peerConnection = new RTCPeerConnection(rtcConfig);
@@ -203,17 +280,14 @@ function setupWebRTC() {
 
   peerConnection.onconnectionstatechange = () => {
     if (peerConnection.connectionState === 'connected') {
-      displaySystemMessage('[SYSTEM] Direct P2P tunnel active.', 'success');
+      displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active.', 'success');
     } else if (peerConnection.connectionState === 'failed') {
       displaySystemMessage('[ERROR] Network firewall blocked direct connection.', 'danger');
     }
   };
 
   if (isCreator) {
-    dataChannel = peerConnection.createDataChannel('drift-chat', {
-      ordered: true,
-      maxRetransmits: 3 
-    });
+    dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true, maxRetransmits: 3 });
     setupDataChannel();
   } else {
     peerConnection.ondatachannel = (event) => {
@@ -227,8 +301,29 @@ function setupDataChannel() {
   dataChannel.onopen = () => displaySystemMessage('Secure data tunnel ready.', 'success');
   dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
   
-  dataChannel.onmessage = (event) => {
-    const payload = JSON.parse(event.data);
+  dataChannel.onmessage = async (event) => {
+    let payload;
+    
+    // Decryption layer
+    try {
+      const parsed = JSON.parse(event.data);
+      if (parsed.e2ee) {
+        const iv = base64ToBuffer(parsed.iv);
+        const ct = base64ToBuffer(parsed.ct);
+        const decrypted = await window.crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: new Uint8Array(iv) },
+          e2eeKey,
+          ct
+        );
+        const dec = new TextDecoder();
+        payload = JSON.parse(dec.decode(decrypted));
+      } else {
+        payload = parsed;
+      }
+    } catch (err) {
+      console.error("Decryption rejected. Incorrect key or corrupted data block.");
+      return; // Drop unreadable packets silently
+    }
 
     if (payload.type === 'obfuscation') return;
 
@@ -305,8 +400,10 @@ socket.on('webrtc-ice', async (candidate) => {
   }
 });
 
-// Messaging & File Transfer
-function sendDataChunked(dataUrl, fileType, mimeType) {
+// ==========================================
+// ENCRYPTED MESSAGING & FILE TRANSFERS
+// ==========================================
+async function sendDataChunked(dataUrl, fileType, mimeType) {
   if (!dataChannel || dataChannel.readyState !== 'open') return;
 
   if (dataUrl.length > MAX_FILE_SIZE) {
@@ -317,25 +414,25 @@ function sendDataChunked(dataUrl, fileType, mimeType) {
   const totalChunks = Math.ceil(dataUrl.length / CHUNK_SIZE);
   const fileId = Date.now().toString();
 
-  dataChannel.send(JSON.stringify({ type: 'upload_start', fileId, totalChunks, fileType, mime: mimeType }));
+  await sendEncryptedPayload({ type: 'upload_start', fileId, totalChunks, fileType, mime: mimeType });
   showLoadingIndicator(`Sending ${fileType}...`, fileId);
 
   let currentChunk = 0;
 
-  function sendNext() {
+  async function sendNext() {
     if (dataChannel.readyState !== 'open') return hideLoadingIndicator(fileId);
 
     const start = currentChunk * CHUNK_SIZE;
     const end = start + CHUNK_SIZE;
     const chunk = dataUrl.slice(start, end);
 
-    dataChannel.send(JSON.stringify({ type: 'upload_chunk', fileId, chunkIndex: currentChunk, data: chunk }));
+    await sendEncryptedPayload({ type: 'upload_chunk', fileId, chunkIndex: currentChunk, data: chunk });
 
     currentChunk++;
     if (currentChunk < totalChunks) {
       setTimeout(sendNext, 5);
     } else {
-      dataChannel.send(JSON.stringify({ type: 'upload_end', fileId }));
+      await sendEncryptedPayload({ type: 'upload_end', fileId });
       hideLoadingIndicator(fileId);
       renderMessage({ type: fileType, mime: mimeType, data: dataUrl }, true);
     }
@@ -343,7 +440,7 @@ function sendDataChunked(dataUrl, fileType, mimeType) {
   sendNext();
 }
 
-function handleSendText() {
+async function handleSendText() {
   const input = document.getElementById('message-input');
   const text = input.value.trim();
   
@@ -351,11 +448,11 @@ function handleSendText() {
   
   const payload = { type: 'text', data: text };
   try {
-    dataChannel.send(JSON.stringify(payload));
+    await sendEncryptedPayload(payload);
     renderMessage(payload, true);
     input.value = '';
   } catch(e) {
-    displaySystemMessage('[ERROR] Failed to send transmission.', 'danger');
+    displaySystemMessage('[ERROR] Failed to send encrypted transmission.', 'danger');
   }
 }
 
@@ -392,13 +489,12 @@ async function toggleMic() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Determine device supported codec (iOS Safari prefers mp4, Android/Chrome prefers webm)
       let selectedMimeType = 'audio/webm';
       if (!MediaRecorder.isTypeSupported('audio/webm')) {
         if (MediaRecorder.isTypeSupported('audio/mp4')) {
           selectedMimeType = 'audio/mp4';
         } else {
-          selectedMimeType = ''; // Let browser use default
+          selectedMimeType = ''; 
         }
       }
 
@@ -633,7 +729,7 @@ function displaySystemMessage(text, type = 'normal') {
   container.scrollTop = container.scrollHeight;
 }
 
-// Memory Purge
+// Memory Purge (Cleans Key from RAM)
 function performLocalPurge() {
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   if (callConnection) { callConnection.close(); callConnection = null; }
@@ -650,6 +746,7 @@ function performLocalPurge() {
 
   currentRoomId = null;
   currentPassword = null;
+  e2eeKey = null; // Purge Encryption Key from RAM
   isCallActive = false;
 }
 
@@ -670,29 +767,25 @@ socket.on('room-shredded', () => {
   setTimeout(() => alertModal.classList.add('hidden'), 3500); 
 });
 
-// Periodic dummy traffic injection (masks timing and message length analysis)
+// Periodic dummy traffic injection (Now Encrypted)
 setInterval(() => {
   if (dataChannel && dataChannel.readyState === 'open') {
     const randomSize = Math.floor(Math.random() * 128) + 16;
     const garbage = new Uint8Array(randomSize);
     crypto.getRandomValues(garbage);
-    dataChannel.send(JSON.stringify({ type: 'obfuscation', data: Array.from(garbage) }));
+    sendEncryptedPayload({ type: 'obfuscation', data: Array.from(garbage) });
   }
 }, Math.random() * 4000 + 2000);
 
 // =========================================================================
-// MANDATORY MANIFESTO TIMER (5 SECONDS)
+// MANDATORY MANIFESTO TIMER
 // =========================================================================
-
 document.addEventListener('DOMContentLoaded', () => {
   const agreeBtn = document.getElementById('agree-manifesto-btn');
   const timerDisplay = document.getElementById('manifesto-timer');
   const largeTimerDisplay = document.getElementById('large-manifesto-timer');
   
-  // 5 seconds
   let timeLeft = 5; 
-
-  // Initial display
   updateTimerDisplay();
 
   const timerInterval = setInterval(() => {
@@ -710,12 +803,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const seconds = timeLeft % 60;
       const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
       
-      if (timerDisplay) {
-          timerDisplay.textContent = `(${formattedTime})`;
-      }
-      if (largeTimerDisplay) {
-          largeTimerDisplay.textContent = formattedTime;
-      }
+      if (timerDisplay) timerDisplay.textContent = `(${formattedTime})`;
+      if (largeTimerDisplay) largeTimerDisplay.textContent = formattedTime;
   }
 
   function unlockManifesto() {
@@ -731,7 +820,6 @@ document.addEventListener('DOMContentLoaded', () => {
           agreeBtn.disabled = false;
           agreeBtn.classList.remove('disabled-btn');
           
-          // Add click event to dismiss the overlay once unlocked
           agreeBtn.addEventListener('click', () => {
               document.getElementById('manifesto-overlay').classList.add('hidden');
           });

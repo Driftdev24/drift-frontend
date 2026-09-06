@@ -121,7 +121,6 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 10px var(--primary-g
 .msg.incoming { align-self: flex-start; background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border); border-left: 2px solid var(--muted); border-bottom-left-radius: 2px; }
 .msg.outgoing { align-self: flex-end; background: rgba(0, 255, 102, 0.05); border: 1px solid rgba(0, 255, 102, 0.1); border-right: 2px solid var(--primary); border-bottom-right-radius: 2px; }
 
-/* LOADING/UPLOADING INDICATOR STYLES */
 .loader-circle {
     display: inline-block;
     width: 14px;

@@ -8,6 +8,61 @@
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
+
+  <!-- THE DRIFT MANIFESTO (Mandatory 3-Minute Overlay) -->
+  <div id="manifesto-overlay" class="modal" style="z-index: 999999; background: var(--bg-base); display: flex;">
+    <div class="modal-content info-panel-large glass-panel" style="max-height: 95vh; display: flex; flex-direction: column;">
+      
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color:var(--primary); font-family:'Fira Code', monospace; letter-spacing: 3px; font-size: 2rem;">THE DRIFT MANIFESTO</h1>
+        <p style="color:var(--muted); font-size:0.85rem; text-transform: uppercase;">Please read carefully. You must wait 3 minutes before proceeding.</p>
+      </div>
+
+      <div class="manifesto-scroll-area" style="overflow-y: auto; padding-right: 15px; flex-grow: 1; margin-bottom: 20px;">
+        
+        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">Our Mission & Vision</h3>
+        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace;">
+          Our mission is to restore the fundamental human right to digital privacy. We envision an internet where conversations are fleeting, untracked, and entirely owned by the participants. Modern communication systems are built on surveillance—they log your metadata, store your text, track your IP address, and commodify your data. Drift exists to break that cycle by introducing absolute digital ephemerality.
+        </p>
+
+        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">The Problem & Our Solution</h3>
+        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace;">
+          Even so-called "End-to-End Encrypted" mainstream applications rely on central servers that act as middlemen. Drift eliminates the middleman. By utilizing a strict Peer-to-Peer (WebRTC) architecture, Drift only uses a server for the initial "handshake." Once you and your peer connect, a direct, encrypted tunnel is formed between your two devices.
+        </p>
+
+        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">Absolute Zero-Data Guarantee</h3>
+        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace; border-left: 3px solid var(--primary); padding-left: 10px;">
+          <strong>Even the creator of this system cannot see what you type, send, or say.</strong> Drift possesses zero databases for message storage. We do not have the data, we do not want the data, and we lack the technical capability to view, intercept, or manipulate your conversations. When you refresh the page or close the tab, your data ceases to exist permanently.
+        </p>
+
+        <h3 style="color:var(--primary); font-size:1.1rem; margin-bottom:10px;">An Independent Passion Project</h3>
+        <p style="color:var(--text); font-size:0.85rem; line-height:1.6; margin-bottom:20px; font-family:'Fira Code', monospace;">
+          Drift is not supported, funded, or endorsed by any corporation, government, or external entity. It is a standalone system built purely out of passion and the goal of creating a paradigm shift in how we handle online privacy.
+        </p>
+
+        <div style="border: 1px dashed var(--danger); padding: 20px; border-radius: 8px; background: rgba(255,51,51,0.05); margin-bottom: 10px;">
+          <h3 style="color:var(--danger); font-size:1.1rem; margin-bottom:10px; text-transform: uppercase; text-align: center;" class="pulse-text">CRITICAL SECURITY WARNING</h3>
+          <p style="color:var(--text); font-size:0.85rem; line-height:1.6; font-family:'Fira Code', monospace; margin-bottom: 15px; text-align: justify;">
+            Drift is a fully anonymous system. Because there are no accounts or identity verifications, you can never be absolutely certain of who is on the other end of the screen unless you verify them outside of this app.
+          </p>
+          <ul style="color:var(--danger); font-size:0.85rem; line-height:1.6; padding-left:20px; font-family:'Fira Code', monospace; font-weight: bold;">
+            <li style="margin-bottom: 10px;">Beware of the risks of social engineering.</li>
+            <li style="margin-bottom: 10px;">Always think critically, especially if the topic shifts to financial transactions. NEVER send money, crypto, or sensitive credentials to unverified individuals. Scammers operate in anonymous spaces.</li>
+            <li>Drift is not connected to, nor does it condone, any illegal activities. This tool is for privacy, not for causing harm.</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <!-- Action Button with Timer -->
+      <div style="padding-top: 15px; border-top: 1px solid var(--glass-border); text-align: center;">
+        <button id="agree-manifesto-btn" class="btn disabled-btn" disabled style="width: 100%; transition: all 0.3s ease;">
+          READING REQUIRED <span id="manifesto-timer" style="margin-left: 8px;">(3:00)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
   
   <!-- Liquid Background Orbs -->
   <div class="orb orb-1"></div>
@@ -133,7 +188,7 @@
       <h3 id="call-status-text" class="pulse-text" style="color: var(--primary); margin-bottom: 20px; font-family: 'Fira Code', monospace; text-transform: uppercase;">SECURE VOICE CALL ACTIVE</h3>
       
       <div style="position: relative; width: 100%; max-width: 400px; display: flex; justify-content: center; align-items: center; border: 1px solid var(--primary); box-shadow: 0 0 30px var(--primary-glow); border-radius: 12px; background: #000; min-height: 200px;">
-       <audio id="remote-audio" autoplay playsinline></audio>
+        <audio id="remote-audio" autoplay playsinline></audio>
         
         <!-- Audio Visualizer Mock -->
         <svg class="svg-icon pulse-text" style="width: 60px; height: 60px; color: var(--primary);" viewBox="0 0 16 16">

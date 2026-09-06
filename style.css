@@ -88,6 +88,19 @@ input:focus { border-color: var(--primary); box-shadow: 0 0 10px var(--primary-g
 .btn { width: 100%; padding: 12px; border: 1px solid var(--primary); background: rgba(0,255,102,0.05); color: var(--primary); font-family: 'Fira Code', monospace; font-weight: 600; cursor: pointer; text-transform: uppercase; border-radius: 8px; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 0.9rem;}
 .btn:hover { background: var(--primary); color: #000; box-shadow: 0 0 15px var(--primary-glow); }
 
+/* Manifesto Specific Styles */
+.manifesto-scroll-area::-webkit-scrollbar { width: 6px; }
+.manifesto-scroll-area::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+.manifesto-scroll-area::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+.disabled-btn {
+  background: rgba(102, 102, 102, 0.1) !important;
+  border-color: var(--muted) !important;
+  color: var(--muted) !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
 .error-msg { color:var(--danger); font-family:'Fira Code', monospace; font-size:0.8rem; margin-top:15px; text-align:center; }
 
 .success-box { border: 1px dashed var(--primary); padding: 15px; border-radius: 8px; background: rgba(0, 255, 102, 0.02); margin-bottom: 15px; }

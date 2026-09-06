@@ -169,6 +169,7 @@ function handleJoin(e) {
       openChatInterface();
       displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
     } else {
+      // The capacity limit error ("Room is already full") gets dynamically displayed here
       document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
     }
   });
@@ -489,7 +490,6 @@ async function startCallEngine() {
       const remoteAudio = document.getElementById('remote-audio');
       if (remoteAudio.srcObject !== event.streams[0]) {
         remoteAudio.srcObject = event.streams[0];
-        // Trigger explicit playback for iOS/Safari autoplay policy
         remoteAudio.play().catch(() => {});
       }
     };

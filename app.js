@@ -27,6 +27,11 @@ let callStream = null;
 let amICaller = false;
 let isCallActive = false;
 
+// Audio Amplifier Variables
+let audioCtx = null;
+let gainNode = null;
+let sourceNode = null;
+
 let confirmCallback = null;
 const incomingFiles = {};
 
@@ -108,21 +113,6 @@ async function sendEncryptedPayload(payloadObj) {
 // ==========================================
 // UI EFFECTS & UTILITIES
 // ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-  const panels = document.querySelectorAll('.glass-panel');
-  panels.forEach(panel => {
-    panel.addEventListener('mousemove', (e) => {
-      const rect = panel.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      panel.style.background = `radial-gradient(circle at ${x}px ${y}px, rgba(0, 255, 102, 0.05), rgba(0, 255, 102, 0.01) 40%)`;
-    });
-    panel.addEventListener('mouseleave', () => {
-      panel.style.background = 'var(--glass-bg)';
-    });
-  });
-});
-
 function switchTab(tab) {
   document.getElementById('error-message').textContent = '';
   document.getElementById('create-form').classList.toggle('hidden', tab !== 'create');
@@ -532,7 +522,9 @@ async function toggleMic() {
   }
 }
 
-// Voice Calling Engine
+// ==========================================
+// VOICE CALLING ENGINE
+// ==========================================
 function requestCall() {
   if (isCallActive) return;
   amICaller = true;
@@ -585,6 +577,13 @@ async function startCallEngine() {
       const remoteAudio = document.getElementById('remote-audio');
       if (remoteAudio.srcObject !== event.streams[0]) {
         remoteAudio.srcObject = event.streams[0];
+        
+        // Mute the native audio element to prevent double-playback
+        remoteAudio.muted = true;
+        
+        // Route the audio through our Web Audio API Amplifier
+        setupAudioAmplifier(event.streams[0]);
+
         remoteAudio.play().catch(() => {});
       }
     };
@@ -632,6 +631,54 @@ socket.on('call-ice', async (candidate) => {
   }
 });
 
+function toggleCallMic() {
+  if (!callStream) return;
+  const audioTrack = callStream.getAudioTracks()[0];
+  if (audioTrack) {
+    audioTrack.enabled = !audioTrack.enabled;
+    document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)';
+  }
+}
+
+// ==========================================
+// AUDIO AMPLIFICATION (GAIN NODE)
+// ==========================================
+function setupAudioAmplifier(stream) {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  
+  if (sourceNode) sourceNode.disconnect();
+  if (gainNode) gainNode.disconnect();
+  
+  sourceNode = audioCtx.createMediaStreamSource(stream);
+  gainNode = audioCtx.createGain();
+  
+  // Set initial volume from slider (Default is 1.5 / 150%)
+  const slider = document.getElementById('volume-slider');
+  gainNode.gain.value = slider ? parseFloat(slider.value) : 1.5;
+  
+  sourceNode.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+}
+
+function adjustVolume(value) {
+  if (gainNode) {
+    gainNode.gain.value = parseFloat(value);
+  } else {
+    // Fallback for browsers that heavily restrict Web Audio
+    const remoteAudio = document.getElementById('remote-audio');
+    if (remoteAudio) {
+      remoteAudio.muted = false;
+      remoteAudio.volume = Math.min(parseFloat(value), 1.0); 
+    }
+  }
+}
+
+// ==========================================
+// END CALL & PURGE MEMORY
+// ==========================================
 function endCall() {
   if (!isCallActive) return;
   isCallActive = false;
@@ -646,6 +693,10 @@ function endCall() {
     callConnection = null;
   }
   
+  // Clean up Audio Nodes
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+  if (gainNode) { gainNode.disconnect(); gainNode = null; }
+  
   const remoteAudio = document.getElementById('remote-audio');
   if (remoteAudio) remoteAudio.srcObject = null;
   
@@ -655,15 +706,6 @@ function endCall() {
 }
 
 socket.on('call-end', () => { if (isCallActive) endCall(); });
-
-function toggleCallMic() {
-  if (!callStream) return;
-  const audioTrack = callStream.getAudioTracks()[0];
-  if (audioTrack) {
-    audioTrack.enabled = !audioTrack.enabled;
-    document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)';
-  }
-}
 
 // XSS-Safe DOM Rendering
 function showLoadingIndicator(text, id) {
@@ -734,6 +776,11 @@ function performLocalPurge() {
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   if (callConnection) { callConnection.close(); callConnection = null; }
   if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+
+  // Purge Audio Engine
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+  if (gainNode) { gainNode.disconnect(); gainNode = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
   pendingChatIce = [];
   pendingCallIce = [];

@@ -4,18 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Drift | Conversations that Drift away</title>
+  
+  <link rel="icon" type="image/png" href="2.png">
+  
   <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-  <!-- Dynamic Background: Fading Grid & Data Streams -->
   <div class="bg-grid"></div>
   <div class="data-stream stream-1"></div>
   <div class="data-stream stream-2"></div>
   <div class="data-stream stream-3"></div>
 
-  <!-- THE DRIFT MANIFESTO -->
   <div id="manifesto-overlay" class="modal" style="z-index: 999999; display: flex;">
     <div class="modal-content security-panel">
       
@@ -77,19 +78,16 @@
   </div>
   
   <div class="app-window" id="main-app">
-    <!-- Circuit Border Accents -->
     <div class="circuit-node top-left"></div>
     <div class="circuit-node top-right"></div>
     <div class="circuit-node bottom-left"></div>
     <div class="circuit-node bottom-right"></div>
     <div class="circuit-trace trace-top"></div>
     
-    <!-- Info Button -->
     <button class="nav-btn" onclick="openInfoModal()" title="System Architecture & Usage">
       <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
     </button>
 
-    <!-- LOBBY VIEW -->
     <div id="lobby-view" class="view-panel">
       <div class="brand-header">
         <svg class="brand-logo" viewBox="0 0 24 24">
@@ -140,7 +138,6 @@
       <div id="error-message" class="error-msg"></div>
     </div>
 
-    <!-- SUCCESS VIEW -->
     <div id="success-view" class="view-panel hidden">
       <div class="brand-header center">
         <svg class="brand-logo success-color" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
@@ -170,10 +167,8 @@
       <button class="btn-primary" onclick="enterGeneratedRoom()">GO TO CHAT & WAIT</button>
     </div>
 
-    <!-- CHAT VIEW -->
     <div id="chat-view" class="chat-layout hidden">
       
-      <!-- Top Bar -->
       <header class="chat-header">
         <div class="header-status">
           <div class="status-indicator"></div>
@@ -199,11 +194,9 @@
         </div>
       </header>
 
-      <!-- Messages Area -->
       <div id="messages-container" class="messages-area"></div>
       <input type="file" id="media-upload" accept="image/*" class="hidden" onchange="handleFileSelect(event)" />
 
-      <!-- Input Area -->
       <div id="chat-controls" class="input-area">
         <button class="btn-square action-btn" title="Send Image" onclick="document.getElementById('media-upload').click()">
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"/></svg>
@@ -218,13 +211,11 @@
       </div>
     </div>
 
-    <!-- AUDIO UI -->
     <div id="call-ui" class="modal hidden">
       <div class="call-panel">
         <h3 id="call-status-text">SECURE VOICE CALL ACTIVE</h3>
         <div class="audio-wave-container">
           <audio id="remote-audio" autoplay playsinline></audio>
-          <!-- Abstract Data Stream Visualizer -->
           <div class="wave-bar w1"></div>
           <div class="wave-bar w2"></div>
           <div class="wave-bar w3"></div>
@@ -234,10 +225,8 @@
           <div class="wave-bar w1"></div>
         </div>
         
-        <!-- Volume Control Slider -->
         <div class="volume-control">
           <svg class="vol-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-          <!-- min="0" (Mute), max="3" (300% Boost), value="1.5" (Default 150% Boost) -->
           <input type="range" id="volume-slider" min="0" max="3" step="0.1" value="1.5" oninput="adjustVolume(this.value)">
         </div>
 
@@ -250,7 +239,6 @@
       </div>
     </div>
 
-    <!-- Modals -->
     <div id="media-modal" class="modal hidden" onclick="closeModal('media-modal')">
       <img id="modal-img" class="media-preview">
     </div>

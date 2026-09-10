@@ -1,6 +1,127 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 :root {
+
+
+/* === GLOBAL LOCKDOWN MODE === */
+#global-lockdown-overlay {
+  position: fixed; 
+  inset: 0; 
+  background: #020202; 
+  z-index: 9999999999; /* Impossibly high z-index makes the app totally unusable */
+  display: flex; 
+  justify-content: center; 
+  align-items: center;
+  padding: 20px;
+  /* Fake monitor scanline background */
+  background-image: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 140, 0, 0.03) 2px, rgba(255, 140, 0, 0.03) 4px);
+}
+
+.lockdown-container {
+  max-width: 650px; 
+  width: 100%;
+  border: 1px solid #FF8C00;
+  background: rgba(20, 10, 0, 0.95);
+  border-radius: 6px; 
+  padding: clamp(24px, 5vw, 40px);
+  box-shadow: 0 0 40px rgba(255, 140, 0, 0.2), inset 0 0 20px rgba(255, 140, 0, 0.05);
+}
+
+.lockdown-header {
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  margin-bottom: 24px;
+  border-bottom: 1px dashed rgba(255, 140, 0, 0.5); 
+  padding-bottom: 16px;
+}
+
+.lockdown-header h1 {
+  color: #FF8C00; 
+  font-family: var(--font-mono); 
+  font-size: clamp(1.2rem, 4vw, 1.6rem); 
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 10px rgba(255, 140, 0, 0.4);
+}
+
+.blinking-cursor {
+  display: inline-block; 
+  width: 14px; 
+  height: 28px; 
+  background: #FF8C00;
+  animation: blink 1s step-end infinite;
+  box-shadow: 0 0 8px #FF8C00;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.sys-msg { 
+  color: var(--danger); 
+  font-family: var(--font-mono); 
+  font-size: 0.9rem;
+  font-weight: bold; 
+  margin-bottom: 16px; 
+  letter-spacing: 0.05em;
+}
+
+.lockdown-body p { 
+  font-family: var(--font-mono); 
+  font-size: 0.95rem; 
+  line-height: 1.6; 
+  color: #E2ECE5; 
+  margin-bottom: 24px; 
+}
+
+.dev-note {
+  background: rgba(255, 140, 0, 0.08); 
+  border-left: 4px solid #FF8C00;
+  padding: 20px; 
+  margin-bottom: 30px; 
+  display: flex; 
+  gap: 16px; 
+  align-items: flex-start;
+}
+
+.wrench-icon { 
+  width: 28px; 
+  height: 28px; 
+  fill: #FF8C00; 
+  flex-shrink: 0; 
+  margin-top: 2px;
+}
+
+.dev-note strong {
+  display: block;
+  color: #FF8C00;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.dev-note p { 
+  margin: 0; 
+  color: rgba(255, 255, 255, 0.8); 
+  font-size: 0.85rem;
+}
+
+.terminal-loader {
+  font-family: var(--font-mono); 
+  color: #FF8C00; 
+  font-size: 0.85rem; 
+  text-align: center;
+  margin-top: 20px; 
+  animation: pulseWarning 2s infinite alternate;
+}
+
+@keyframes pulseWarning { 
+  from { opacity: 0.5; } 
+  to { opacity: 1; text-shadow: 0 0 12px rgba(255, 140, 0, 0.8); } 
+}
+
+
+
+
+  
   /* Stealth Color Palette */
   --bg-core: #040605;       
   --surface: #0a0e0b;       

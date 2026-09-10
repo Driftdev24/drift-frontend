@@ -4,15 +4,11 @@
 
 
 
-  /* === KAWAII GREEN LOCKDOWN MODE === */
-#global-lockdown-overlay {
+ /* === COLORFUL INTERACTIVE LOCKDOWN MODE === */
+#color-lockdown-overlay {
   position: fixed; 
   inset: 0; 
-  /* Soft pastel mint background with a cute polka dot pattern */
-  background-color: #e6fcf5;
-  background-image: radial-gradient(#69dbaf 1.5px, transparent 1.5px);
-  background-size: 24px 24px;
-  z-index: 9999999999; /* Blocks everything */
+  z-index: 9999999999; 
   display: flex; 
   justify-content: center; 
   align-items: center;
@@ -20,154 +16,147 @@
   overflow: hidden;
 }
 
-/* The Cute Card */
-.kawaii-lockdown-container {
-  max-width: 550px; 
+/* Animated Colorful Background */
+.pastel-bg-animation {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, #ff9a9e 0%, #fecfef 25%, #a1c4fd 50%, #c2e9fb 75%, #d4fc79 100%);
+  background-size: 300% 300%;
+  animation: rainbowFlow 8s ease infinite;
+  z-index: -1;
+}
+
+@keyframes rainbowFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* The Main Card */
+.color-card {
+  max-width: 500px; 
   width: 100%;
-  background: #ffffff;
-  border: 4px solid #a3e6cd;
-  border-radius: 30px; /* Big rounded corners! */
-  padding: clamp(30px, 6vw, 40px);
-  box-shadow: 0 15px 40px rgba(32, 201, 151, 0.15);
-  position: relative;
-  z-index: 10;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 4px solid #ffffff;
+  border-radius: 35px;
+  padding: clamp(24px, 5vw, 36px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
   text-align: center;
-  animation: floatCard 4s ease-in-out infinite;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-@keyframes floatCard {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+/* Text Styling */
+.color-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.kawaii-header {
-  margin-bottom: 20px;
-}
-
-.mascot-face {
-  font-size: 3rem;
-  color: #20c997;
-  font-weight: bold;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  margin-bottom: 10px;
-  animation: wiggle 3s infinite;
-}
-
-@keyframes wiggle {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-10deg); }
-  75% { transform: rotate(10deg); }
-}
-
-.kawaii-header h1 {
-  color: #084c2e; 
-  font-family: var(--font-sans); 
-  font-size: clamp(1.4rem, 4vw, 1.8rem); 
+.color-header h1 {
+  font-family: var(--font-sans);
+  font-size: clamp(1.4rem, 4vw, 1.8rem);
   font-weight: 800;
+  line-height: 1.3;
+  /* Multi-color text gradient */
+  background: linear-gradient(90deg, #ff6b81, #7bed9f, #70a1ff);
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: textShine 4s linear infinite;
 }
 
-.cute-badge { 
+@keyframes textShine {
+  to { background-position: 200% center; }
+}
+
+.dev-sign {
   display: inline-block;
-  background: #e6fcf5;
-  color: #20c997; 
-  font-family: var(--font-sans); 
+  align-self: center;
+  background: #f1f2f6;
+  color: #57606f;
+  font-family: var(--font-mono);
+  font-weight: 700;
   font-size: 0.8rem;
-  font-weight: 800; 
   padding: 8px 16px;
   border-radius: 20px;
-  margin-bottom: 16px; 
+  letter-spacing: 0.1em;
+}
+
+/* === MINI GAME STYLING === */
+.game-box {
+  background: #ffffff;
+  border: 3px solid #dfe4ea;
+  border-radius: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: inset 0 4px 10px rgba(0,0,0,0.03);
+}
+
+.game-header {
+  background: #f8f9fa;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #dfe4ea;
+}
+
+.game-title {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #a4b0be;
+  text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.kawaii-body p { 
-  font-family: var(--font-sans); 
-  font-size: 1rem; 
-  line-height: 1.6; 
-  color: #4b7a63; 
-  margin-bottom: 24px; 
-}
-
-/* Developer Note Section */
-.kawaii-dev-note {
-  background: #f1fdf9; 
-  border: 2px dashed #69dbaf;
-  border-radius: 20px;
-  padding: 20px; 
-  margin-bottom: 30px; 
-  display: flex; 
-  gap: 16px; 
-  align-items: center;
-  text-align: left;
-}
-
-.dev-icon { 
-  font-size: 2.5rem;
-  flex-shrink: 0; 
-}
-
-.dev-text strong {
-  display: block;
-  color: #084c2e;
-  font-family: var(--font-sans);
+.game-score {
+  font-family: var(--font-mono);
   font-size: 1rem;
-  margin-bottom: 6px;
+  font-weight: 800;
+  color: #ff6b81;
 }
 
-.dev-text p { 
-  margin: 0; 
-  color: #4b7a63; 
-  font-size: 0.9rem;
+.bubble-play-area {
+  height: 250px;
+  position: relative;
+  overflow: hidden;
+  background: #fafafa;
+  /* Soft grid background for the game */
+  background-image: radial-gradient(#dfe4ea 2px, transparent 2px);
+  background-size: 20px 20px;
 }
 
-/* Cute Bouncing Loader */
-.kawaii-loader {
-  font-family: var(--font-sans); 
-  color: #20c997; 
-  font-size: 1rem; 
-  font-weight: 700;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-}
-
-.bouncing-dots {
-  display: flex;
-  gap: 4px;
-}
-
-.bouncing-dots .dot {
-  width: 8px;
-  height: 8px;
-  background-color: #20c997;
-  border-radius: 50%;
-  animation: bounceDot 1.4s infinite ease-in-out both;
-}
-
-.bouncing-dots .dot:nth-child(1) { animation-delay: -0.32s; }
-.bouncing-dots .dot:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes bounceDot {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
-}
-
-/* Background Floating Elements */
-.floating-leaf {
+/* Individual Floating Bubble */
+.play-bubble {
   position: absolute;
-  font-size: 2rem;
-  opacity: 0.4;
-  z-index: 1;
-}
-.leaf-1 { top: 15%; left: 10%; animation: floatLeaf 6s ease-in-out infinite; }
-.leaf-2 { top: 20%; right: 15%; animation: floatLeaf 5s ease-in-out infinite reverse; }
-.leaf-3 { bottom: 15%; left: 20%; animation: floatLeaf 7s ease-in-out infinite; }
-
-@keyframes floatLeaf {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-20px) rotate(15deg); }
+  bottom: -60px; /* Start below the box */
+  border-radius: 50%;
+  cursor: crosshair; /* Crosshair cursor for gaming! */
+  box-shadow: inset -5px -5px 10px rgba(0,0,0,0.1), 0 4px 8px rgba(0,0,0,0.1);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  animation: floatUp 3.5s linear forwards;
 }
 
+.play-bubble:hover {
+  transform: scale(1.1);
+}
+
+/* The Pop Effect */
+.play-bubble.popped {
+  transform: scale(1.5);
+  opacity: 0;
+}
+
+@keyframes floatUp {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-350px); }
+}
 
   
   /* Stealth Color Palette */

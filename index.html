@@ -37,15 +37,18 @@
 
   <!-- Mini Game Logic -->
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
+    // Self-starting game loop
+    function initDriftGame() {
       let score = 0;
-      const bubbleArea = document.getElementById('bubble-area');
-      const scoreDisplay = document.getElementById('game-score');
       // Bright, cute pastel colors for the bubbles
       const bubbleColors = ['#ff8da1', '#7be495', '#56cbf9', '#ffcf59', '#b892ff'];
 
       function spawnBubble() {
-        if (!bubbleArea) return;
+        const bubbleArea = document.getElementById('bubble-area');
+        const scoreDisplay = document.getElementById('game-score');
+        
+        // Safety check to ensure the HTML is fully loaded
+        if (!bubbleArea || !scoreDisplay) return;
         
         const bubble = document.createElement('div');
         bubble.classList.add('play-bubble');
@@ -58,17 +61,24 @@
         bubble.style.width = size + 'px';
         bubble.style.height = size + 'px';
         
-        // Assign random starting X position
-        const maxX = bubbleArea.clientWidth - size;
-        const xPos = Math.floor(Math.random() * maxX);
-        bubble.style.left = xPos + 'px';
+        // FIX: Use Percentages (10% to 90%) instead of pixels so it spawns perfectly on ANY device size!
+        const randomLeftPercent = Math.floor(Math.random() * 80) + 10;
+        bubble.style.left = randomLeftPercent + '%';
         
-        // Pop action!
+        // Desktop Click Pop
         bubble.onmousedown = function() {
           score++;
           scoreDisplay.textContent = 'SCORE: ' + score;
           bubble.classList.add('popped');
-          // Scale up quickly, then remove from DOM
+          setTimeout(() => bubble.remove(), 150);
+        };
+
+        // Mobile Phone Tap Pop (Fixes mobile touch delays)
+        bubble.ontouchstart = function(e) {
+          e.preventDefault(); 
+          score++;
+          scoreDisplay.textContent = 'SCORE: ' + score;
+          bubble.classList.add('popped');
           setTimeout(() => bubble.remove(), 150);
         };
         
@@ -76,15 +86,17 @@
         
         // Remove bubble automatically when it floats to the top
         setTimeout(() => {
-          if(bubble.parentElement) bubble.remove();
+          if (bubble.parentElement) bubble.remove();
         }, 3500);
       }
 
-      // Spawn a new bubble every 500ms
-      setInterval(spawnBubble, 500);
-    });
-  </script>
+      // Spawn a new bubble every 400 milliseconds
+      setInterval(spawnBubble, 400);
+    }
 
+    // Launch the game instantly
+    initDriftGame();
+  </script>
 
 
   

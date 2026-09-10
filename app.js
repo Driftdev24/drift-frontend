@@ -47,16 +47,6 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ==========================================
-// FEATURE TABS NAVIGATION
-// ==========================================
-function switchFeatureView(view) {
-  document.getElementById('view-messages').classList.toggle('hidden', view !== 'messages');
-  document.getElementById('view-transfers').classList.toggle('hidden', view !== 'transfers');
-  document.getElementById('nav-messages').classList.toggle('active', view === 'messages');
-  document.getElementById('nav-transfers').classList.toggle('active', view === 'transfers');
-}
-
-// ==========================================
 // MILITARY-GRADE E2EE CRYPTOGRAPHY ENGINE
 // ==========================================
 async function setupE2EEKey(password) {
@@ -267,7 +257,7 @@ function setupDataChannel() {
     // === PHANTOM TRANSFER LOGIC ===
     else if (payload.type === 'phantom_start') {
       phantomMeta = payload; phantomBuffer = []; phantomReceivedSize = 0;
-      document.getElementById('phantom-transfer-status').classList.remove('hidden');
+      document.getElementById('phantom-transfer-status').style.display = 'block';
       document.getElementById('transfer-text').innerText = "Receiving File...";
       document.getElementById('transfer-progress').value = 0;
     }
@@ -288,7 +278,7 @@ function setupDataChannel() {
         
         setTimeout(() => {
           URL.revokeObjectURL(url); phantomBuffer = []; phantomMeta = null;
-          document.getElementById('phantom-transfer-status').classList.add('hidden');
+          document.getElementById('phantom-transfer-status').style.display = 'none';
           displaySystemMessage(`[PHANTOM] Received anonymous file. RAM wiped.`, 'success');
         }, 1500);
       }
@@ -374,6 +364,13 @@ function renderMessage(payload, isMe) {
       modal.classList.remove('hidden');
     };
     msgEl.appendChild(img);
+  } else if (payload.type === 'voice' || payload.type === 'voice message') {
+    const audio = document.createElement('audio');
+    audio.src = payload.data;
+    audio.controls = true;
+    audio.playsInline = true;
+    audio.className = 'media-content';
+    msgEl.appendChild(audio);
   }
 
   // Inject Sent Status at bottom if sender
@@ -426,7 +423,7 @@ async function startPhantomTransfer(event) {
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const fileId = Date.now().toString();
 
-  document.getElementById('phantom-transfer-status').classList.remove('hidden');
+  document.getElementById('phantom-transfer-status').style.display = 'block';
   document.getElementById('transfer-text').innerText = "Encrypting & Sending...";
   document.getElementById('transfer-progress').value = 0;
 
@@ -449,13 +446,47 @@ async function startPhantomTransfer(event) {
         await sendEncryptedPayload({ type: 'phantom_end', fileId });
         document.getElementById('transfer-text').innerText = "Complete. Memory wiped.";
         displaySystemMessage(`[PHANTOM] Sent anonymous file. Cache cleared.`, 'success');
-        setTimeout(() => document.getElementById('phantom-transfer-status').classList.add('hidden'), 3000);
+        setTimeout(() => document.getElementById('phantom-transfer-status').style.display = 'none', 3000);
         event.target.value = '';
       }
     };
     reader.readAsArrayBuffer(slice);
   };
   sendNext();
+}
+
+// Adaptive Mic Recording for iOS Safari & Android
+async function toggleMic() {
+  const micBtn = document.getElementById('mic-btn');
+  if (!dataChannel || dataChannel.readyState !== 'open') { displaySystemMessage('[SYSTEM ALERT] Connection is not ready.', 'danger'); return; }
+  
+  if (!isRecording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let selectedMimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) { selectedMimeType = 'audio/mp4'; } 
+        else { selectedMimeType = ''; }
+      }
+      mediaRecorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+      
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: selectedMimeType || 'audio/mp4' });
+        if (audioBlob.size > MAX_FILE_SIZE) { displaySystemMessage('[ERROR] Voice message exceeded limit.', 'danger'); return; }
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const payload = { type: 'voice', data: e.target.result, msgId: generateMsgId() };
+          await sendEncryptedPayload(payload);
+          renderMessage(payload, true);
+        };
+        reader.readAsDataURL(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      mediaRecorder.start(); isRecording = true; micBtn.classList.add('recording');
+    } catch (err) { displaySystemMessage('[ERROR] Microphone access denied or unsupported.', 'danger'); }
+  } else { mediaRecorder.stop(); isRecording = false; micBtn.classList.remove('recording'); }
 }
 
 // ==========================================

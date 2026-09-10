@@ -2,14 +2,12 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
   ? 'http://localhost:3000' 
   : 'https://drift-backend-nkru.onrender.com';
 
-const socket = io(BACKEND_URL, {
-  transports: ['websocket', 'polling'] 
-});
+const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
 
 let rtcConfig = null;
 let currentRoomId = null;
 let currentPassword = null;
-let e2eeKey = null; // Holds the AES-GCM encryption key in RAM
+let e2eeKey = null;
 
 let peerConnection;
 let dataChannel;
@@ -26,19 +24,20 @@ let callConnection = null;
 let callStream = null;
 let amICaller = false;
 let isCallActive = false;
-
-// Audio Amplifier Variables
 let audioCtx = null;
 let gainNode = null;
 let sourceNode = null;
 
 let confirmCallback = null;
-const incomingFiles = {};
 
-// Hard limits for DoS and memory protection
+// Phantom Transfer Variables
+let phantomBuffer = [];
+let phantomMeta = null;
+let phantomReceivedSize = 0;
+
+// Config
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-const CHUNK_SIZE = 16384; // 16KB
-const MAX_CHUNKS = Math.ceil(MAX_FILE_SIZE / CHUNK_SIZE);
+const CHUNK_SIZE = 16384; 
 
 window.addEventListener('beforeunload', (e) => {
   if (currentRoomId) {
@@ -48,19 +47,24 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ==========================================
+// FEATURE TABS NAVIGATION
+// ==========================================
+function switchFeatureView(view) {
+  document.getElementById('view-messages').classList.toggle('hidden', view !== 'messages');
+  document.getElementById('view-transfers').classList.toggle('hidden', view !== 'transfers');
+  document.getElementById('nav-messages').classList.toggle('active', view === 'messages');
+  document.getElementById('nav-transfers').classList.toggle('active', view === 'transfers');
+}
+
+// ==========================================
 // MILITARY-GRADE E2EE CRYPTOGRAPHY ENGINE
 // ==========================================
-
-// Converts the plain text password into a secure AES-GCM crypto key
 async function setupE2EEKey(password) {
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.digest('SHA-256', enc.encode(password));
-  e2eeKey = await window.crypto.subtle.importKey(
-    'raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
-  );
+  e2eeKey = await window.crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
-// Hashes the password for the server so the backend is completely blind to the real key
 async function hashPasswordForServer(password) {
   const enc = new TextEncoder();
   const hashBuffer = await window.crypto.subtle.digest('SHA-256', enc.encode(password + "drift_server_salt"));
@@ -68,15 +72,12 @@ async function hashPasswordForServer(password) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
 }
 
-// Buffer to Base64 (For safe transmission)
 function bufferToBase64(buf) {
   let bin = '';
   const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
   return window.btoa(bin);
 }
-
-// Base64 to Buffer
 function base64ToBuffer(base64) {
   const bin = window.atob(base64);
   const bytes = new Uint8Array(bin.length);
@@ -84,7 +85,9 @@ function base64ToBuffer(base64) {
   return bytes.buffer;
 }
 
-// Encrypts the payload before it enters the WebRTC tunnel
+// Generates unique message IDs for Read Receipts & Blur events
+function generateMsgId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
+
 async function sendEncryptedPayload(payloadObj) {
   if (!e2eeKey || !dataChannel || dataChannel.readyState !== 'open') return;
   try {
@@ -93,18 +96,14 @@ async function sendEncryptedPayload(payloadObj) {
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     
     const ciphertext = await window.crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv },
-      e2eeKey,
-      enc.encode(plainText)
+      { name: 'AES-GCM', iv: iv }, e2eeKey, enc.encode(plainText)
     );
     
-    const encryptedPayload = {
+    dataChannel.send(JSON.stringify({
       e2ee: true,
       iv: bufferToBase64(iv),
       ct: bufferToBase64(ciphertext)
-    };
-    
-    dataChannel.send(JSON.stringify(encryptedPayload));
+    }));
   } catch (e) {
     console.error("Encryption failed:", e);
   }
@@ -120,98 +119,60 @@ function switchTab(tab) {
   document.getElementById('tab-create-btn').classList.toggle('active', tab === 'create');
   document.getElementById('tab-join-btn').classList.toggle('active', tab === 'join');
 }
-
 function universalCopy(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    return navigator.clipboard.writeText(text);
-  } else {
-    return new Promise((resolve, reject) => {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        textArea.remove();
-        resolve();
-      } catch (error) {
-        textArea.remove();
-        reject(error);
-      }
-    });
-  }
-}
-
-function copyData(elementId, btn) {
-  const text = document.getElementById(elementId).innerText;
-  universalCopy(text).then(() => {
-    btn.innerText = "COPIED!";
-    setTimeout(() => { btn.innerText = "COPY"; }, 1500);
-  }).catch(() => alert("Failed to copy automatically. Please select and copy manually."));
-}
-
-function quickCopyText(textElementId, iconContainerId) {
-  const text = document.getElementById(textElementId).innerText;
-  universalCopy(text).then(() => {
-    const iconNode = document.getElementById(iconContainerId);
-    const originalHTML = iconNode.innerHTML;
-    iconNode.innerHTML = `<span style="color:var(--primary); font-size: 0.75rem; font-weight: bold;">COPIED!</span>`;
-    setTimeout(() => { iconNode.innerHTML = originalHTML; }, 1500);
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  return new Promise((resolve) => {
+    const ta = document.createElement('textarea'); ta.value = text;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); resolve();
   });
 }
-
-function showConfirm(message, callback) {
-  document.getElementById('confirm-message').textContent = message;
-  document.getElementById('confirm-modal').classList.remove('hidden');
-  confirmCallback = callback;
+function copyData(id, btn) {
+  universalCopy(document.getElementById(id).innerText).then(() => {
+    btn.innerText = "COPIED!"; setTimeout(() => { btn.innerText = "COPY"; }, 1500);
+  });
 }
-function executeConfirm() {
-  document.getElementById('confirm-modal').classList.add('hidden');
-  if (confirmCallback) confirmCallback();
+function quickCopyText(id, iconId) {
+  universalCopy(document.getElementById(id).innerText).then(() => {
+    const icon = document.getElementById(iconId);
+    const orig = icon.innerHTML;
+    icon.innerHTML = `<span style="color:var(--primary); font-size: 0.75rem; font-weight: bold;">COPIED!</span>`;
+    setTimeout(() => { icon.innerHTML = orig; }, 1500);
+  });
 }
-function cancelConfirm() {
-  document.getElementById('confirm-modal').classList.add('hidden');
-  confirmCallback = null;
-}
-
+function showConfirm(msg, cb) { document.getElementById('confirm-message').textContent = msg; document.getElementById('confirm-modal').classList.remove('hidden'); confirmCallback = cb; }
+function executeConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); if (confirmCallback) confirmCallback(); }
+function cancelConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); confirmCallback = null; }
 function openInfoModal() { document.getElementById('info-modal').classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
 // ==========================================
-// SECURE HANDSHAKE
+// HANDSHAKE & SIGNALING
 // ==========================================
 async function handleCreate(e) {
   e.preventDefault();
   currentPassword = document.getElementById('create-password').value;
-  
-  // 1. Generate local encryption key
   await setupE2EEKey(currentPassword);
-  // 2. Hash password for backend verification
-  const serverSafePassword = await hashPasswordForServer(currentPassword);
-
-  socket.emit('create-room', { password: serverSafePassword }, (res) => {
+  
+  socket.emit('create-room', { password: await hashPasswordForServer(currentPassword) }, (res) => {
     if (res.success) {
-      isCreator = true;
-      currentRoomId = res.id;
-      
+      isCreator = true; currentRoomId = res.id;
       rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
       
       document.getElementById('lobby-view').classList.add('hidden');
       document.getElementById('success-view').classList.remove('hidden');
       document.getElementById('disp-id').innerText = currentRoomId;
-      document.getElementById('disp-pass').innerText = currentPassword; // Display raw password to share with peer
-      
+      document.getElementById('disp-pass').innerText = currentPassword; 
       setupWebRTC();
     }
   });
 }
 
 function enterGeneratedRoom() {
-  openChatInterface();
+  document.getElementById('lobby-view').classList.add('hidden');
+  document.getElementById('success-view').classList.add('hidden');
+  document.getElementById('chat-view').classList.remove('hidden');
+  document.getElementById('room-code-display').textContent = currentRoomId;
+  document.getElementById('room-pass-display').textContent = currentPassword;
   displaySystemMessage('Waiting for your peer to join...');
 }
 
@@ -219,19 +180,13 @@ async function handleJoin(e) {
   e.preventDefault();
   currentRoomId = document.getElementById('join-code').value.toUpperCase();
   currentPassword = document.getElementById('join-password').value;
-
-  // 1. Generate local encryption key
   await setupE2EEKey(currentPassword);
-  // 2. Hash password for backend verification
-  const serverSafePassword = await hashPasswordForServer(currentPassword);
 
-  socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
+  socket.emit('join-room', { id: currentRoomId, password: await hashPasswordForServer(currentPassword) }, (res) => {
     if (res.success) {
-      isCreator = false;
-      rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
-      
+      isCreator = false; rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
       if (!peerConnection) setupWebRTC(); 
-      openChatInterface();
+      enterGeneratedRoom();
       displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
     } else {
       document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
@@ -239,51 +194,26 @@ async function handleJoin(e) {
   });
 }
 
-function openChatInterface() {
-  document.getElementById('lobby-view').classList.add('hidden');
-  document.getElementById('success-view').classList.add('hidden');
-  document.getElementById('chat-view').classList.remove('hidden');
-  document.getElementById('room-code-display').textContent = currentRoomId;
-  document.getElementById('room-pass-display').textContent = currentPassword;
-}
-
 // ==========================================
-// WEBRTC & DATA CHANNEL
+// WEBRTC & DATA CHANNEL LOGIC
 // ==========================================
 function setupWebRTC() {
   if (peerConnection || !rtcConfig) return; 
   peerConnection = new RTCPeerConnection(rtcConfig);
-  let hasIceCandidates = false;
+  let hasIce = false;
   
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      hasIceCandidates = true;
-      socket.emit('webrtc-ice', event.candidate);
-    }
+  peerConnection.onicecandidate = (e) => {
+    if (e.candidate) { hasIce = true; socket.emit('webrtc-ice', e.candidate); }
   };
-
-  peerConnection.onicegatheringstatechange = () => {
-    if (peerConnection.iceGatheringState === 'complete' && !hasIceCandidates) {
-      displaySystemMessage('[WARNING] WebRTC candidates blocked. Check browser privacy shields.', 'danger');
-    }
-  };
-
   peerConnection.onconnectionstatechange = () => {
-    if (peerConnection.connectionState === 'connected') {
-      displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active.', 'success');
-    } else if (peerConnection.connectionState === 'failed') {
-      displaySystemMessage('[ERROR] Network firewall blocked direct connection.', 'danger');
-    }
+    if (peerConnection.connectionState === 'connected') displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active.', 'success');
   };
 
   if (isCreator) {
     dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true, maxRetransmits: 3 });
     setupDataChannel();
   } else {
-    peerConnection.ondatachannel = (event) => {
-      dataChannel = event.channel;
-      setupDataChannel();
-    };
+    peerConnection.ondatachannel = (e) => { dataChannel = e.channel; setupDataChannel(); };
   }
 }
 
@@ -293,53 +223,75 @@ function setupDataChannel() {
   
   dataChannel.onmessage = async (event) => {
     let payload;
-    
-    // Decryption layer
     try {
       const parsed = JSON.parse(event.data);
       if (parsed.e2ee) {
-        const iv = base64ToBuffer(parsed.iv);
-        const ct = base64ToBuffer(parsed.ct);
         const decrypted = await window.crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: new Uint8Array(iv) },
-          e2eeKey,
-          ct
+          { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.iv)) }, e2eeKey, base64ToBuffer(parsed.ct)
         );
-        const dec = new TextDecoder();
-        payload = JSON.parse(dec.decode(decrypted));
-      } else {
-        payload = parsed;
-      }
-    } catch (err) {
-      console.error("Decryption rejected. Incorrect key or corrupted data block.");
-      return; // Drop unreadable packets silently
-    }
+        payload = JSON.parse(new TextDecoder().decode(decrypted));
+      } else { payload = parsed; }
+    } catch (err) { return; }
 
     if (payload.type === 'obfuscation') return;
 
-    if (payload.type === 'upload_start') {
-      if (payload.totalChunks > MAX_CHUNKS) {
-        displaySystemMessage(`[SECURITY] Blocked incoming file exceeding 25MB limit.`, 'danger');
-        return;
+    // READ RECEIPT LOGIC (Sender receives this)
+    if (payload.type === 'seen_ack') {
+      const statusEl = document.getElementById('status-' + payload.msgId);
+      if (statusEl && !statusEl.classList.contains('expired')) {
+        statusEl.textContent = '✓✓ Seen';
+        statusEl.classList.add('seen');
       }
-      incomingFiles[payload.fileId] = { chunks: [], fileType: payload.fileType, mime: payload.mime, total: payload.totalChunks };
-      showLoadingIndicator(`Receiving ${payload.fileType}...`, payload.fileId);
-    } 
-    else if (payload.type === 'upload_chunk') {
-      if (incomingFiles[payload.fileId]) {
-        incomingFiles[payload.fileId].chunks[payload.chunkIndex] = payload.data;
+      return;
+    }
+    
+    // IMAGE BLUR EVENT (Sender receives this when receiver closes modal)
+    if (payload.type === 'image_expired') {
+      const localImg = document.querySelector(`#msg-${payload.msgId} img`);
+      if (localImg) localImg.classList.add('blurred-media');
+      const statusEl = document.getElementById('status-' + payload.msgId);
+      if (statusEl) {
+        statusEl.textContent = 'Expired';
+        statusEl.classList.add('expired');
       }
-    } 
-    else if (payload.type === 'upload_end') {
-      if (incomingFiles[payload.fileId]) {
-        hideLoadingIndicator(payload.fileId);
-        const completeData = incomingFiles[payload.fileId].chunks.join('');
-        renderMessage({ type: incomingFiles[payload.fileId].fileType, mime: incomingFiles[payload.fileId].mime, data: completeData }, false);
-        delete incomingFiles[payload.fileId];
-      }
-    } 
-    else {
+      return;
+    }
+
+    // NEW MESSAGE (Receiver renders and replies with seen_ack)
+    if (payload.type === 'text' || payload.type === 'image' || payload.type === 'voice') {
       renderMessage(payload, false);
+      // Auto-reply read receipt
+      if (payload.msgId) sendEncryptedPayload({ type: 'seen_ack', msgId: payload.msgId });
+    }
+
+    // === PHANTOM TRANSFER LOGIC ===
+    else if (payload.type === 'phantom_start') {
+      phantomMeta = payload; phantomBuffer = []; phantomReceivedSize = 0;
+      document.getElementById('phantom-transfer-status').classList.remove('hidden');
+      document.getElementById('transfer-text').innerText = "Receiving File...";
+      document.getElementById('transfer-progress').value = 0;
+    }
+    else if (payload.type === 'phantom_chunk') {
+      if (phantomMeta && phantomMeta.fileId === payload.fileId) {
+        const buffer = base64ToBuffer(payload.data);
+        phantomBuffer.push(buffer);
+        phantomReceivedSize += buffer.byteLength;
+        document.getElementById('transfer-progress').value = (phantomReceivedSize / phantomMeta.size) * 100;
+      }
+    }
+    else if (payload.type === 'phantom_end') {
+      if (phantomMeta && phantomMeta.fileId === payload.fileId) {
+        document.getElementById('transfer-text').innerText = "Wiping RAM Cache...";
+        const blob = new Blob(phantomBuffer, { type: phantomMeta.mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = phantomMeta.name; a.click();
+        
+        setTimeout(() => {
+          URL.revokeObjectURL(url); phantomBuffer = []; phantomMeta = null;
+          document.getElementById('phantom-transfer-status').classList.add('hidden');
+          displaySystemMessage(`[PHANTOM] Received anonymous file. RAM wiped.`, 'success');
+        }, 1500);
+      }
     }
   };
 }
@@ -347,394 +299,62 @@ function setupDataChannel() {
 socket.on('peer-joined', async () => {
   displaySystemMessage('[SYSTEM] Peer detected. Exchanging coordinates...', 'normal');
   if (isCreator) {
-    try {
-      if (!peerConnection) setupWebRTC();
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      socket.emit('webrtc-offer', offer);
-    } catch (err) { console.error(err); }
+    if (!peerConnection) setupWebRTC();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('webrtc-offer', offer);
   }
 });
 
 socket.on('webrtc-offer', async (offer) => {
   if (!isCreator) {
-    try {
-      if (!peerConnection) setupWebRTC();
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      socket.emit('webrtc-answer', answer);
-      while (pendingChatIce.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {});
-      }
-    } catch (err) { console.error(err); }
+    if (!peerConnection) setupWebRTC();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('webrtc-answer', answer);
   }
 });
 
-socket.on('webrtc-answer', async (answer) => {
-  if (isCreator) {
-    try {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      while (pendingChatIce.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {});
-      }
-    } catch (err) { console.error(err); }
-  }
-});
-
-socket.on('webrtc-ice', async (candidate) => {
-  if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
-  } else {
-    pendingChatIce.push(candidate);
-  }
-});
+socket.on('webrtc-answer', async (answer) => { if (isCreator) await peerConnection.setRemoteDescription(new RTCSessionDescription(answer)); });
+socket.on('webrtc-ice', async (candidate) => { if (peerConnection) peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(()=>{}); });
 
 // ==========================================
-// ENCRYPTED MESSAGING & FILE TRANSFERS
+// CHAT & MEDIA RENDERING
 // ==========================================
-async function sendDataChunked(dataUrl, fileType, mimeType) {
-  if (!dataChannel || dataChannel.readyState !== 'open') return;
-
-  if (dataUrl.length > MAX_FILE_SIZE) {
-    displaySystemMessage('[ERROR] File exceeds 25MB limit.', 'danger');
-    return;
-  }
-
-  const totalChunks = Math.ceil(dataUrl.length / CHUNK_SIZE);
-  const fileId = Date.now().toString();
-
-  await sendEncryptedPayload({ type: 'upload_start', fileId, totalChunks, fileType, mime: mimeType });
-  showLoadingIndicator(`Sending ${fileType}...`, fileId);
-
-  let currentChunk = 0;
-
-  async function sendNext() {
-    if (dataChannel.readyState !== 'open') return hideLoadingIndicator(fileId);
-
-    const start = currentChunk * CHUNK_SIZE;
-    const end = start + CHUNK_SIZE;
-    const chunk = dataUrl.slice(start, end);
-
-    await sendEncryptedPayload({ type: 'upload_chunk', fileId, chunkIndex: currentChunk, data: chunk });
-
-    currentChunk++;
-    if (currentChunk < totalChunks) {
-      setTimeout(sendNext, 5);
-    } else {
-      await sendEncryptedPayload({ type: 'upload_end', fileId });
-      hideLoadingIndicator(fileId);
-      renderMessage({ type: fileType, mime: mimeType, data: dataUrl }, true);
-    }
-  }
-  sendNext();
-}
-
 async function handleSendText() {
   const input = document.getElementById('message-input');
   const text = input.value.trim();
-  
   if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
   
-  const payload = { type: 'text', data: text };
-  try {
-    await sendEncryptedPayload(payload);
-    renderMessage(payload, true);
-    input.value = '';
-  } catch(e) {
-    displaySystemMessage('[ERROR] Failed to send encrypted transmission.', 'danger');
-  }
+  const payload = { type: 'text', data: text, msgId: generateMsgId() };
+  await sendEncryptedPayload(payload);
+  renderMessage(payload, true);
+  input.value = '';
 }
 
 function handleFileSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
+  if (file.size > MAX_FILE_SIZE) { displaySystemMessage('[ERROR] Limit is 25MB.', 'danger'); event.target.value = ''; return; }
 
-  if (file.size > MAX_FILE_SIZE) {
-    displaySystemMessage('[ERROR] File exceeds 25MB limit.', 'danger');
-    event.target.value = ''; 
-    return;
-  }
-
-  showConfirm(`Send image?`, () => {
+  showConfirm(`Send view-once image? It will blur after viewing.`, () => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      sendDataChunked(e.target.result, 'image', file.type);
+    reader.onload = async (e) => {
+      const payload = { type: 'image', data: e.target.result, msgId: generateMsgId() };
+      await sendEncryptedPayload(payload);
+      renderMessage(payload, true);
     };
     reader.readAsDataURL(file);
     event.target.value = ''; 
   });
 }
 
-// Adaptive Mic Recording for iOS Safari & Android
-async function toggleMic() {
-  const micBtn = document.getElementById('mic-btn');
-  
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[SYSTEM ALERT] Connection is not ready.', 'danger');
-    return;
-  }
-  
-  if (!isRecording) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      let selectedMimeType = 'audio/webm';
-      if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          selectedMimeType = 'audio/mp4';
-        } else {
-          selectedMimeType = ''; 
-        }
-      }
-
-      mediaRecorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
-      audioChunks = [];
-      
-      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-      
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: selectedMimeType || 'audio/mp4' });
-        
-        if (audioBlob.size > MAX_FILE_SIZE) {
-          displaySystemMessage('[ERROR] Voice message exceeded limit.', 'danger');
-          return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          sendDataChunked(e.target.result, 'voice message', selectedMimeType || 'audio/mp4');
-        };
-        reader.readAsDataURL(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      isRecording = true;
-      micBtn.classList.add('recording');
-    } catch (err) {
-      displaySystemMessage('[ERROR] Microphone access denied or unsupported.', 'danger');
-    }
-  } else {
-    mediaRecorder.stop();
-    isRecording = false;
-    micBtn.classList.remove('recording');
-  }
-}
-
-// ==========================================
-// VOICE CALLING ENGINE
-// ==========================================
-function requestCall() {
-  if (isCallActive) return;
-  amICaller = true;
-  socket.emit('call-request', { isVideo: false });
-  displaySystemMessage(`Dialing peer for Voice Call...`);
-}
-
-socket.on('call-request', () => {
-  if (isCallActive) return socket.emit('call-response', { accepted: false, reason: 'Busy' });
-  amICaller = false;
-  document.getElementById('incoming-call-type').textContent = `Incoming Voice Call`;
-  document.getElementById('incoming-call-modal').classList.remove('hidden');
-});
-
-async function acceptCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  displaySystemMessage('[SYSTEM] Connecting voice hardware...', 'normal');
-  await startCallEngine(); 
-  socket.emit('call-response', { accepted: true }); 
-}
-
-function rejectCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  socket.emit('call-response', { accepted: false });
-}
-
-socket.on('call-response', async (data) => {
-  if (data.accepted) {
-    displaySystemMessage('Call accepted. Connecting...', 'success');
-    await startCallEngine(); 
-  } else {
-    displaySystemMessage(`Call declined${data.reason ? ' (' + data.reason + ')' : ''}.`, 'danger');
-    amICaller = false;
-  }
-});
-
-async function startCallEngine() {
-  isCallActive = true;
-  document.getElementById('call-ui').classList.remove('hidden');
-  
-  try {
-    callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    callConnection = new RTCPeerConnection(rtcConfig);
-    
-    callConnection.onicecandidate = (event) => {
-      if (event.candidate) socket.emit('call-ice', event.candidate);
-    };
-
-    callConnection.ontrack = (event) => {
-      const remoteAudio = document.getElementById('remote-audio');
-      if (remoteAudio.srcObject !== event.streams[0]) {
-        remoteAudio.srcObject = event.streams[0];
-        
-        // Mute the native audio element to prevent double-playback
-        remoteAudio.muted = true;
-        
-        // Route the audio through our Web Audio API Amplifier
-        setupAudioAmplifier(event.streams[0]);
-
-        remoteAudio.play().catch(() => {});
-      }
-    };
-
-    callStream.getTracks().forEach(track => {
-      callConnection.addTrack(track, callStream);
-    });
-
-    if (amICaller) {
-      const offer = await callConnection.createOffer();
-      await callConnection.setLocalDescription(offer);
-      socket.emit('call-offer', offer);
-    }
-
-  } catch (err) {
-    displaySystemMessage(`[CALL FAILED] Microphone access denied.`, 'danger');
-    endCall();
-  }
-}
-
-socket.on('call-offer', async (offer) => {
-  if (!isCallActive || !callConnection) return;
-  await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  while (pendingCallIce.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {});
-  }
-  const answer = await callConnection.createAnswer();
-  await callConnection.setLocalDescription(answer);
-  socket.emit('call-answer', answer);
-});
-
-socket.on('call-answer', async (answer) => {
-  if (!isCallActive || !callConnection) return;
-  await callConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  while (pendingCallIce.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {});
-  }
-});
-
-socket.on('call-ice', async (candidate) => {
-  if (callConnection && callConnection.remoteDescription && callConnection.remoteDescription.type) {
-    callConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
-  } else {
-    pendingCallIce.push(candidate); 
-  }
-});
-
-function toggleCallMic() {
-  if (!callStream) return;
-  const audioTrack = callStream.getAudioTracks()[0];
-  if (audioTrack) {
-    audioTrack.enabled = !audioTrack.enabled;
-    document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)';
-  }
-}
-
-// ==========================================
-// AUDIO AMPLIFICATION (GAIN NODE)
-// ==========================================
-function setupAudioAmplifier(stream) {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  
-  if (sourceNode) sourceNode.disconnect();
-  if (gainNode) gainNode.disconnect();
-  
-  sourceNode = audioCtx.createMediaStreamSource(stream);
-  gainNode = audioCtx.createGain();
-  
-  // Set initial volume from slider (Default is 1.5 / 150%)
-  const slider = document.getElementById('volume-slider');
-  gainNode.gain.value = slider ? parseFloat(slider.value) : 1.5;
-  
-  sourceNode.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
-}
-
-function adjustVolume(value) {
-  if (gainNode) {
-    gainNode.gain.value = parseFloat(value);
-  } else {
-    // Fallback for browsers that heavily restrict Web Audio
-    const remoteAudio = document.getElementById('remote-audio');
-    if (remoteAudio) {
-      remoteAudio.muted = false;
-      remoteAudio.volume = Math.min(parseFloat(value), 1.0); 
-    }
-  }
-}
-
-// ==========================================
-// END CALL & PURGE MEMORY
-// ==========================================
-function endCall() {
-  if (!isCallActive) return;
-  isCallActive = false;
-  amICaller = false;
-  
-  if (callStream) {
-    callStream.getTracks().forEach(track => track.stop());
-    callStream = null;
-  }
-  if (callConnection) {
-    callConnection.close();
-    callConnection = null;
-  }
-  
-  // Clean up Audio Nodes
-  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
-  if (gainNode) { gainNode.disconnect(); gainNode = null; }
-  
-  const remoteAudio = document.getElementById('remote-audio');
-  if (remoteAudio) remoteAudio.srcObject = null;
-  
-  document.getElementById('call-ui').classList.add('hidden');
-  socket.emit('call-end');
-  displaySystemMessage('Call ended.', 'normal');
-}
-
-socket.on('call-end', () => { if (isCallActive) endCall(); });
-
-// XSS-Safe DOM Rendering
-function showLoadingIndicator(text, id) {
-  const container = document.getElementById('messages-container');
-  const msgEl = document.createElement('div');
-  msgEl.className = `msg loading`;
-  msgEl.id = `load-${id}`;
-  
-  const spinner = document.createElement('span');
-  spinner.className = 'loader-circle';
-  
-  const textNode = document.createTextNode(' ' + text);
-
-  msgEl.appendChild(spinner);
-  msgEl.appendChild(textNode);
-  
-  container.appendChild(msgEl);
-  container.scrollTop = container.scrollHeight;
-}
-
-function hideLoadingIndicator(id) {
-  const loader = document.getElementById(`load-${id}`);
-  if (loader) loader.remove();
-}
-
 function renderMessage(payload, isMe) {
   const container = document.getElementById('messages-container');
   const msgEl = document.createElement('div');
   msgEl.className = `msg ${isMe ? 'outgoing' : 'incoming'}`;
+  msgEl.id = `msg-${payload.msgId}`;
 
   if (payload.type === 'text') {
     const textNode = document.createElement('div');
@@ -744,132 +364,198 @@ function renderMessage(payload, isMe) {
     const img = document.createElement('img');
     img.src = payload.data;
     img.className = 'media-content clickable-media';
+    
+    // View-Once Modal Trigger
     img.onclick = () => {
+      if (img.classList.contains('blurred-media')) return; // Block reopening
       document.getElementById('modal-img').src = payload.data;
-      document.getElementById('media-modal').classList.remove('hidden');
+      const modal = document.getElementById('media-modal');
+      modal.dataset.activeMsgId = payload.msgId; // Link modal to message
+      modal.classList.remove('hidden');
     };
     msgEl.appendChild(img);
-  } else if (payload.type === 'voice message' || payload.type === 'audio') {
-    const audio = document.createElement('audio');
-    audio.src = payload.data;
-    audio.controls = true;
-    audio.playsInline = true;
-    audio.className = 'media-content';
-    msgEl.appendChild(audio);
+  }
+
+  // Inject Sent Status at bottom if sender
+  if (isMe && payload.msgId) {
+    const status = document.createElement('div');
+    status.className = 'msg-status';
+    status.id = `status-${payload.msgId}`;
+    status.textContent = '✓ Sent';
+    msgEl.appendChild(status);
   }
 
   container.appendChild(msgEl);
   container.scrollTop = container.scrollHeight;
+}
+
+function triggerMediaExpire(event) {
+  if(event) event.stopPropagation(); // Stop bubbling
+  const modal = document.getElementById('media-modal');
+  modal.classList.add('hidden');
+  
+  const msgId = modal.dataset.activeMsgId;
+  if (msgId) {
+    // Blur receiver's local image
+    const localImg = document.querySelector(`#msg-${msgId} img`);
+    if (localImg) localImg.classList.add('blurred-media');
+    
+    // Tell sender we finished viewing
+    sendEncryptedPayload({ type: 'image_expired', msgId: msgId });
+    modal.dataset.activeMsgId = '';
+  }
 }
 
 function displaySystemMessage(text, type = 'normal') {
   const container = document.getElementById('messages-container');
-  const msgEl = document.createElement('div');
-  msgEl.className = `msg system ${type}`;
-  msgEl.textContent = text;
-  container.appendChild(msgEl);
-  container.scrollTop = container.scrollHeight;
+  const msgEl = document.createElement('div'); msgEl.className = `msg system ${type}`; msgEl.textContent = text;
+  container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
 
-// Memory Purge (Cleans Key from RAM)
-function performLocalPurge() {
-  if (peerConnection) { peerConnection.close(); peerConnection = null; }
-  if (callConnection) { callConnection.close(); callConnection = null; }
-  if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+// ==========================================
+// PHANTOM FILE TRANSFER SENDER
+// ==========================================
+async function startPhantomTransfer(event) {
+  const file = event.target.files[0];
+  if (!file || !dataChannel || dataChannel.readyState !== 'open') return;
 
-  // Purge Audio Engine
-  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
-  if (gainNode) { gainNode.disconnect(); gainNode = null; }
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (file.size > MAX_FILE_SIZE) { displaySystemMessage('[ERROR] File exceeds 25MB limit.', 'danger'); event.target.value = ''; return; }
 
-  pendingChatIce = [];
-  pendingCallIce = [];
+  const ext = file.name.split('.').pop();
+  const anonymousName = "drift_phantom_" + Math.random().toString(36).substring(2, 10) + (ext ? `.${ext}` : '');
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const fileId = Date.now().toString();
 
-  document.getElementById('messages-container').innerHTML = '';
-  document.getElementById('chat-view').classList.add('hidden');
-  document.getElementById('call-ui').classList.add('hidden');
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  document.getElementById('lobby-view').classList.remove('hidden');
+  document.getElementById('phantom-transfer-status').classList.remove('hidden');
+  document.getElementById('transfer-text').innerText = "Encrypting & Sending...";
+  document.getElementById('transfer-progress').value = 0;
 
-  currentRoomId = null;
-  currentPassword = null;
-  e2eeKey = null; // Purge Encryption Key from RAM
-  isCallActive = false;
+  await sendEncryptedPayload({ type: 'phantom_start', fileId, name: anonymousName, size: file.size, mime: file.type, totalChunks });
+
+  let currentChunk = 0; const reader = new FileReader();
+
+  const sendNext = async () => {
+    if (dataChannel.readyState !== 'open') return;
+    const start = currentChunk * CHUNK_SIZE;
+    const slice = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+
+    reader.onload = async (e) => {
+      await sendEncryptedPayload({ type: 'phantom_chunk', fileId, chunkIndex: currentChunk, data: bufferToBase64(e.target.result) });
+      currentChunk++;
+      document.getElementById('transfer-progress').value = (currentChunk / totalChunks) * 100;
+      
+      if (currentChunk < totalChunks) { setTimeout(sendNext, 5); } 
+      else {
+        await sendEncryptedPayload({ type: 'phantom_end', fileId });
+        document.getElementById('transfer-text').innerText = "Complete. Memory wiped.";
+        displaySystemMessage(`[PHANTOM] Sent anonymous file. Cache cleared.`, 'success');
+        setTimeout(() => document.getElementById('phantom-transfer-status').classList.add('hidden'), 3000);
+        event.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(slice);
+  };
+  sendNext();
 }
 
-function requestPurge() {
-  showConfirm("Are you sure you want to leave and destroy the chat?", () => {
-    socket.emit('shred-room');
-    const alertModal = document.getElementById('purge-alert');
-    alertModal.classList.remove('hidden');
-    performLocalPurge();
-    setTimeout(() => alertModal.classList.add('hidden'), 3500); 
-  });
+// ==========================================
+// VOICE CALLING ENGINE
+// ==========================================
+function requestCall() {
+  if (isCallActive) return; amICaller = true; socket.emit('call-request', { isVideo: false });
+  displaySystemMessage(`Dialing peer for Voice Call...`);
 }
+socket.on('call-request', () => {
+  if (isCallActive) return socket.emit('call-response', { accepted: false, reason: 'Busy' });
+  amICaller = false; document.getElementById('incoming-call-type').textContent = `Incoming Voice Call`;
+  document.getElementById('incoming-call-modal').classList.remove('hidden');
+});
+async function acceptCall() {
+  document.getElementById('incoming-call-modal').classList.add('hidden'); displaySystemMessage('[SYSTEM] Connecting voice...', 'normal');
+  await startCallEngine(); socket.emit('call-response', { accepted: true }); 
+}
+function rejectCall() { document.getElementById('incoming-call-modal').classList.add('hidden'); socket.emit('call-response', { accepted: false }); }
 
-socket.on('room-shredded', () => {
-  const alertModal = document.getElementById('purge-alert');
-  alertModal.classList.remove('hidden');
-  performLocalPurge();
-  setTimeout(() => alertModal.classList.add('hidden'), 3500); 
+socket.on('call-response', async (data) => {
+  if (data.accepted) { displaySystemMessage('Call accepted. Connecting...', 'success'); await startCallEngine(); } 
+  else { displaySystemMessage(`Call declined.`, 'danger'); amICaller = false; }
 });
 
-// Periodic dummy traffic injection (Now Encrypted)
-setInterval(() => {
-  if (dataChannel && dataChannel.readyState === 'open') {
-    const randomSize = Math.floor(Math.random() * 128) + 16;
-    const garbage = new Uint8Array(randomSize);
-    crypto.getRandomValues(garbage);
-    sendEncryptedPayload({ type: 'obfuscation', data: Array.from(garbage) });
-  }
-}, Math.random() * 4000 + 2000);
+async function startCallEngine() {
+  isCallActive = true; document.getElementById('call-ui').classList.remove('hidden');
+  try {
+    callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    callConnection = new RTCPeerConnection(rtcConfig);
+    callConnection.onicecandidate = (e) => { if (e.candidate) socket.emit('call-ice', e.candidate); };
+    callConnection.ontrack = (e) => {
+      const audio = document.getElementById('remote-audio');
+      if (audio.srcObject !== e.streams[0]) {
+        audio.srcObject = e.streams[0]; audio.muted = true;
+        setupAudioAmplifier(e.streams[0]); audio.play().catch(()=>{});
+      }
+    };
+    callStream.getTracks().forEach(t => callConnection.addTrack(t, callStream));
+    if (amICaller) { const offer = await callConnection.createOffer(); await callConnection.setLocalDescription(offer); socket.emit('call-offer', offer); }
+  } catch (err) { endCall(); }
+}
 
-// =========================================================================
-// MANDATORY MANIFESTO TIMER
-// =========================================================================
+socket.on('call-offer', async (offer) => {
+  if (!isCallActive) return; await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await callConnection.createAnswer(); await callConnection.setLocalDescription(answer); socket.emit('call-answer', answer);
+});
+socket.on('call-answer', async (answer) => { if (isCallActive) await callConnection.setRemoteDescription(new RTCSessionDescription(answer)); });
+socket.on('call-ice', async (candidate) => { if (callConnection) callConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(()=>{}); });
+
+function toggleCallMic() {
+  if (!callStream) return; const audioTrack = callStream.getAudioTracks()[0];
+  if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)'; }
+}
+
+function setupAudioAmplifier(stream) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (sourceNode) sourceNode.disconnect(); if (gainNode) gainNode.disconnect();
+  sourceNode = audioCtx.createMediaStreamSource(stream); gainNode = audioCtx.createGain();
+  gainNode.gain.value = 1.5; sourceNode.connect(gainNode); gainNode.connect(audioCtx.destination);
+}
+function adjustVolume(value) { if (gainNode) gainNode.gain.value = parseFloat(value); }
+
+function endCall() {
+  if (!isCallActive) return; isCallActive = false; amICaller = false;
+  if (callStream) callStream.getTracks().forEach(t => t.stop()); if (callConnection) callConnection.close();
+  if (sourceNode) sourceNode.disconnect(); if (gainNode) gainNode.disconnect();
+  document.getElementById('remote-audio').srcObject = null; document.getElementById('call-ui').classList.add('hidden');
+  socket.emit('call-end'); displaySystemMessage('Call ended.', 'normal');
+}
+socket.on('call-end', () => { if (isCallActive) endCall(); });
+
+// ==========================================
+// MEMORY PURGE
+// ==========================================
+function performLocalPurge() {
+  if (peerConnection) peerConnection.close(); if (callConnection) callConnection.close();
+  if (callStream) callStream.getTracks().forEach(t => t.stop()); if (audioCtx) audioCtx.close();
+  document.getElementById('messages-container').innerHTML = '';
+  document.getElementById('chat-view').classList.add('hidden');
+  document.getElementById('lobby-view').classList.remove('hidden');
+  currentRoomId = null; currentPassword = null; e2eeKey = null; phantomBuffer = [];
+}
+function requestPurge() {
+  showConfirm("Destroy chat?", () => { socket.emit('shred-room'); document.getElementById('purge-alert').classList.remove('hidden'); performLocalPurge(); setTimeout(() => document.getElementById('purge-alert').classList.add('hidden'), 3500); });
+}
+socket.on('room-shredded', () => { document.getElementById('purge-alert').classList.remove('hidden'); performLocalPurge(); setTimeout(() => document.getElementById('purge-alert').classList.add('hidden'), 3500); });
+
+// ==========================================
+// MANDATORY MANIFESTO
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  const agreeBtn = document.getElementById('agree-manifesto-btn');
-  const timerDisplay = document.getElementById('manifesto-timer');
-  const largeTimerDisplay = document.getElementById('large-manifesto-timer');
-  
-  let timeLeft = 5; 
-  updateTimerDisplay();
-
+  const agreeBtn = document.getElementById('agree-manifesto-btn'); let timeLeft = 5; 
   const timerInterval = setInterval(() => {
-      timeLeft--;
-      updateTimerDisplay();
-
-      if (timeLeft <= 0) {
-          clearInterval(timerInterval);
-          unlockManifesto();
-      }
+    timeLeft--; if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      document.getElementById('large-manifesto-timer').textContent = '00:00';
+      agreeBtn.textContent = 'I UNDERSTAND AND AGREE'; agreeBtn.disabled = false;
+      agreeBtn.addEventListener('click', () => document.getElementById('manifesto-overlay').classList.add('hidden'));
+    }
   }, 1000);
-
-  function updateTimerDisplay() {
-      const minutes = Math.floor(timeLeft / 60);
-      const seconds = timeLeft % 60;
-      const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-      
-      if (timerDisplay) timerDisplay.textContent = `(${formattedTime})`;
-      if (largeTimerDisplay) largeTimerDisplay.textContent = formattedTime;
-  }
-
-  function unlockManifesto() {
-      if (timerDisplay) timerDisplay.textContent = '';
-      if (largeTimerDisplay) {
-          largeTimerDisplay.textContent = '00:00';
-          largeTimerDisplay.style.color = 'var(--primary)';
-          largeTimerDisplay.classList.remove('pulse-text');
-      }
-
-      if (agreeBtn) {
-          agreeBtn.textContent = 'I UNDERSTAND AND AGREE';
-          agreeBtn.disabled = false;
-          agreeBtn.classList.remove('disabled-btn');
-          
-          agreeBtn.addEventListener('click', () => {
-              document.getElementById('manifesto-overlay').classList.add('hidden');
-          });
-      }
-  }
 });

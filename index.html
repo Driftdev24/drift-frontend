@@ -10,43 +10,84 @@
 </head>
 <body>
 
-  <!-- KAWAII LOCKDOWN SHIELD -->
-  <div id="global-lockdown-overlay">
+
+<!-- COLORFUL KAWAII LOCKDOWN OVERLAY + MINI GAME -->
+  <div id="color-lockdown-overlay">
     
-    <!-- Floating decorative leaves in the background -->
-    <div class="floating-leaf leaf-1">🍃</div>
-    <div class="floating-leaf leaf-2">✨</div>
-    <div class="floating-leaf leaf-3">🌱</div>
+    <!-- Animated Gradient Background -->
+    <div class="pastel-bg-animation"></div>
 
-    <div class="kawaii-lockdown-container">
-      <div class="kawaii-header">
-        <div class="mascot-face">(>﹏<)</div>
-        <h1>Oopsie! System Napping...</h1>
+    <div class="color-card">
+      <div class="color-header">
+        <h1>THE DEV FIXING SOMETHING IN THE SYSTEM</h1>
+        <div class="dev-sign">IM SORRY GUYS - DEV</div>
       </div>
-      
-      <div class="kawaii-body">
-        <div class="cute-badge">✨ TINY HICCUP DETECTED ✨</div>
-        <p>Oh no! Drift is taking an unexpected little break. To keep all your super-secret chats completely safe and cozy, we've paused everything just for a moment!</p>
-        
-        <div class="kawaii-dev-note">
-          <div class="dev-icon">💻🍵</div>
-          <div class="dev-text">
-            <strong>Dev is working super hard! (ง •̀_•́)ง</strong>
-            <p>Our developer is currently brewing some matcha green tea and fixing the code to make the system cuter and faster! Please check back soon~</p>
-          </div>
-        </div>
 
-        <div class="kawaii-loader">
-          <span>Watering the servers</span>
-          <div class="bouncing-dots">
-            <span class="dot"></span>
-            <span class="dot"></span>
-            <span class="dot"></span>
-          </div>
+      <!-- Interactive Mini Game -->
+      <div class="game-box">
+        <div class="game-header">
+          <span class="game-title">Play while you wait! Pop the bubbles!</span>
+          <span id="game-score" class="game-score">SCORE: 0</span>
         </div>
+        <div id="bubble-area" class="bubble-play-area"></div>
       </div>
+
     </div>
   </div>
+
+  <!-- Mini Game Logic -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      let score = 0;
+      const bubbleArea = document.getElementById('bubble-area');
+      const scoreDisplay = document.getElementById('game-score');
+      // Bright, cute pastel colors for the bubbles
+      const bubbleColors = ['#ff8da1', '#7be495', '#56cbf9', '#ffcf59', '#b892ff'];
+
+      function spawnBubble() {
+        if (!bubbleArea) return;
+        
+        const bubble = document.createElement('div');
+        bubble.classList.add('play-bubble');
+        
+        // Assign random color
+        bubble.style.backgroundColor = bubbleColors[Math.floor(Math.random() * bubbleColors.length)];
+        
+        // Assign random size between 25px and 55px
+        const size = Math.floor(Math.random() * 30) + 25;
+        bubble.style.width = size + 'px';
+        bubble.style.height = size + 'px';
+        
+        // Assign random starting X position
+        const maxX = bubbleArea.clientWidth - size;
+        const xPos = Math.floor(Math.random() * maxX);
+        bubble.style.left = xPos + 'px';
+        
+        // Pop action!
+        bubble.onmousedown = function() {
+          score++;
+          scoreDisplay.textContent = 'SCORE: ' + score;
+          bubble.classList.add('popped');
+          // Scale up quickly, then remove from DOM
+          setTimeout(() => bubble.remove(), 150);
+        };
+        
+        bubbleArea.appendChild(bubble);
+        
+        // Remove bubble automatically when it floats to the top
+        setTimeout(() => {
+          if(bubble.parentElement) bubble.remove();
+        }, 3500);
+      }
+
+      // Spawn a new bubble every 500ms
+      setInterval(spawnBubble, 500);
+    });
+  </script>
+
+
+
+  
 
   <div class="bg-grid"></div>
   <div class="data-stream stream-1"></div>

@@ -1,6 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
+
+  <!-- MAINTENANCE OVERRIDE SCREEN -->
+  <div id="maintenance-overlay" class="modal hidden" style="z-index: 9999999;">
+    <div class="maintenance-panel">
+      <div class="maintenance-header">
+        <svg class="warning-icon pulse" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 16h2v2h-2zm0-6h2v5h-2z"/></svg>
+        <h2>SYSTEM OFFLINE</h2>
+      </div>
+      <div class="maintenance-body">
+        <p>The Drift network infrastructure is currently undergoing scheduled cryptographic enhancements and node routing optimizations.</p>
+        <p>All peer-to-peer relay tunnels are temporarily suspended to ensure absolute data integrity. Please wait until the upgrade is complete to establish secure connections.</p>
+        <div class="maintenance-status">
+          <span>ESTIMATED DOWNTIME:</span> <span class="status-highlight">UNKNOWN</span><br>
+          <span>STATUS:</span> <span class="status-highlight blinking">UPDATING PROTOCOLS...</span>
+        </div>
+      </div>
+      <button class="btn-outline" style="width: 100%; border-color: var(--danger); color: var(--danger);" onclick="location.reload()">REBOOT TERMINAL</button>
+    </div>
+  </div>
+
+  
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Drift | Conversations that Drift away</title>

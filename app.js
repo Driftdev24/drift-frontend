@@ -392,11 +392,9 @@ async function sendFileStream(file) {
   }
 
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  // Numeric unique ID for 4-byte header packing
   const fileToken = Math.floor(Math.random() * 2147483647);
   const fileIdStr = fileToken.toString();
 
-  // Announce file metadata
   await sendEncryptedPayload({
     type: 'file_start',
     fileId: fileIdStr,
@@ -419,7 +417,6 @@ async function sendFileStream(file) {
         return;
       }
 
-      // Check WebRTC backpressure: pause if buffer is congested
       if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
         await new Promise(resolve => {
           dataChannel.onbufferedamountlow = () => {
@@ -429,13 +426,11 @@ async function sendFileStream(file) {
         });
       }
 
-      // Slice strictly from disk (never load entire file into memory)
       const start = currentChunk * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const blobSlice = file.slice(start, end);
       const rawChunk = await blobSlice.arrayBuffer();
 
-      // Encrypt raw binary chunk
       const iv = window.crypto.getRandomValues(new Uint8Array(12));
       const encryptedData = await window.crypto.subtle.encrypt(
         { name: 'AES-GCM', iv: iv },
@@ -443,11 +438,6 @@ async function sendFileStream(file) {
         rawChunk
       );
 
-      // Binary Packet Packing:
-      // [0..3]: fileToken (Uint32)
-      // [4..7]: chunkIndex (Uint32)
-      // [8..19]: IV (12 Bytes)
-      // [20..End]: Encrypted Buffer
       const packet = new Uint8Array(20 + encryptedData.byteLength);
       const view = new DataView(packet.buffer);
       view.setUint32(0, fileToken);
@@ -507,7 +497,7 @@ async function handleIncomingBinaryChunk(buffer) {
     session.receivedChunks++;
     updateTransferProgress(fileIdStr, session.receivedChunks, session.totalChunks);
   } catch (err) {
-    console.error("Corrupt binary chunk dropped:", err);
+    console.error("Corrupt binary chunk dropped");
   }
 }
 
@@ -517,9 +507,8 @@ function handleRemoteFileEnd(payload) {
 
   removeTransferProgress(payload.fileId);
 
-  // Construct binary Blob directly from raw ArrayBuffers
   const fileBlob = new Blob(session.chunks, { type: session.mime || 'application/octet-stream' });
-  delete incomingFiles[payload.fileId]; // Purge intermediate chunk array
+  delete incomingFiles[payload.fileId]; 
 
   const downloadUrl = URL.createObjectURL(fileBlob);
   renderCompletedFileCard({ name: session.name, size: session.size, mime: session.mime }, downloadUrl, false);

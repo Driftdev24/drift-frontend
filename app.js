@@ -814,9 +814,17 @@ socket.on('webrtc-ice', async (candidate) => {
 let autoJoinData = null;
 document.addEventListener('DOMContentLoaded', () => {
   if (window.location.hash) {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    if (hashParams.has('r') && hashParams.has('p')) {
-      autoJoinData = { room: hashParams.get('r'), pass: hashParams.get('p') };
+    const hashString = window.location.hash.substring(1);
+    
+    // FIX: Manual parsing to prevent URLSearchParams from mangling special characters like "+"
+    const params = {};
+    hashString.split('&').forEach(pair => {
+      const [key, value] = pair.split('=');
+      if (key && value) params[key] = decodeURIComponent(value);
+    });
+
+    if (params['r'] && params['p']) {
+      autoJoinData = { room: params['r'], pass: params['p'] };
       window.history.replaceState(null, "", window.location.pathname);
     }
   }

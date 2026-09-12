@@ -34,11 +34,10 @@ let sourceNode = null;
 let confirmCallback = null;
 
 // File Transfer Engine State
-const CHUNK_SIZE = 65536; // 64 KB binary packet
+const CHUNK_SIZE = 65536; 
 const incomingFiles = {};
 let activeSendAborts = new Map();
 
-// Global Encoders
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -52,71 +51,69 @@ window.addEventListener('beforeunload', (e) => {
 // ==========================================
 // DYNAMIC HARDWARE & STORAGE BUDGETING
 // ==========================================
-
 async function calculateStorageBudget() {
-  let safeLimit = 100 * 1024 * 1024; // 100MB conservative fallback
-
+  let safeLimit = 100 * 1024 * 1024; 
   try {
     if (navigator.storage && navigator.storage.estimate) {
       const { quota, usage } = await navigator.storage.estimate();
-      if (quota) {
-        const availableDisk = quota - (usage || 0);
-        // Safely allow up to 35% of free browser disk space
-        safeLimit = Math.floor(availableDisk * 0.35);
-      }
+      if (quota) safeLimit = Math.floor((quota - (usage || 0)) * 0.35);
     } else if (navigator.deviceMemory) {
-      // RAM-based calculation: 250MB per 1GB RAM
       safeLimit = Math.floor(navigator.deviceMemory * 256 * 1024 * 1024);
     }
   } catch (err) {
-    console.warn("Storage estimate unreadable, using default safety threshold:", err);
+    console.warn("Storage estimate unreadable:", err);
   }
-
-  // Cap dynamic maximum to 4GB to keep 32-bit browser heaps safe
   return Math.max(50 * 1024 * 1024, Math.min(safeLimit, 4 * 1024 * 1024 * 1024));
 }
 
 function formatBytes(bytes, decimals = 2) {
   if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 async function refreshDynamicQuotaDisplay() {
-  const budget = await calculateStorageBudget();
-  const label = document.getElementById('storage-budget-display');
-  if (label) {
-    label.textContent = `DEVICE LIMIT: ~${formatBytes(budget)}`;
+  try {
+    const budget = await calculateStorageBudget();
+    const label = document.getElementById('storage-budget-display');
+    if (label) label.textContent = `DEVICE LIMIT: ~${formatBytes(budget)}`;
+  } catch (err) {
+    console.error("Quota display error:", err);
   }
 }
 
 // ==========================================
 // E2EE CRYPTOGRAPHY ENGINE
 // ==========================================
-
 async function setupE2EEKey(password) {
-  const keyMaterial = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password));
-  e2eeKey = await window.crypto.subtle.importKey(
-    'raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
-  );
+  try {
+    const keyMaterial = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password));
+    e2eeKey = await window.crypto.subtle.importKey(
+      'raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+    );
+  } catch (err) {
+    displaySystemMessage('[ERROR] Cryptography engine failed to initialize.', 'danger');
+    throw err;
+  }
 }
 
 async function hashPasswordForServer(password) {
-  const hashBuffer = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password + "drift_server_salt"));
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+  try {
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password + "drift_server_salt"));
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+  } catch (err) {
+    displaySystemMessage('[ERROR] Failed to securely hash room credentials.', 'danger');
+    throw err;
+  }
 }
 
-// Fast Base64 for JSON-level control payloads
 function bufferToBase64(buf) {
   const bytes = new Uint8Array(buf);
   let bin = '';
-  const batchSize = 8192;
-  for (let i = 0; i < bytes.length; i += batchSize) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + batchSize));
+  for (let i = 0; i < bytes.length; i += 8192) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
   }
   return window.btoa(bin);
 }
@@ -129,33 +126,27 @@ function base64ToBuffer(base64) {
 }
 
 async function sendEncryptedPayload(payloadObj) {
-  if (!e2eeKey || !dataChannel || dataChannel.readyState !== 'open') return;
+  if (!e2eeKey || !dataChannel || dataChannel.readyState !== 'open') {
+    displaySystemMessage('[ERROR] Cannot send data. Secure tunnel is not open.', 'danger');
+    return;
+  }
   try {
     const plainText = JSON.stringify(payloadObj);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    
     const ciphertext = await window.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: iv },
       e2eeKey,
       textEncoder.encode(plainText)
     );
-    
-    const encryptedPayload = {
-      e2ee: true,
-      iv: bufferToBase64(iv),
-      ct: bufferToBase64(ciphertext)
-    };
-    
-    dataChannel.send(JSON.stringify(encryptedPayload));
+    dataChannel.send(JSON.stringify({ e2ee: true, iv: bufferToBase64(iv), ct: bufferToBase64(ciphertext) }));
   } catch (e) {
-    console.error("Payload encryption failed:", e);
+    displaySystemMessage('[ERROR] Payload encryption failed.', 'danger');
   }
 }
 
 // ==========================================
 // UI UTILITIES
 // ==========================================
-
 function switchTab(tab) {
   document.getElementById('error-message').textContent = '';
   document.getElementById('create-form').classList.toggle('hidden', tab !== 'create');
@@ -165,40 +156,29 @@ function switchTab(tab) {
 }
 
 function universalCopy(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    return navigator.clipboard.writeText(text);
-  } else {
-    return new Promise((resolve, reject) => {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        textArea.remove();
-        resolve();
-      } catch (error) {
-        textArea.remove();
-        reject(error);
-      }
-    });
+  try {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed'; textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus(); textArea.select();
+    document.execCommand('copy');
+    textArea.remove();
+    return Promise.resolve();
+  } catch (err) {
+    return Promise.reject(err);
   }
 }
 
 function copyData(elementId, btn) {
-  const text = document.getElementById(elementId).innerText;
-  universalCopy(text).then(() => {
-    btn.innerText = "COPIED!";
-    setTimeout(() => { btn.innerText = "COPY"; }, 1500);
-  });
+  universalCopy(document.getElementById(elementId).innerText).then(() => {
+    btn.innerText = "COPIED!"; setTimeout(() => { btn.innerText = "COPY"; }, 1500);
+  }).catch(() => { btn.innerText = "FAILED"; });
 }
 
 function quickCopyText(textElementId, iconContainerId) {
-  const text = document.getElementById(textElementId).innerText;
-  universalCopy(text).then(() => {
+  universalCopy(document.getElementById(textElementId).innerText).then(() => {
     const iconNode = document.getElementById(iconContainerId);
     const originalHTML = iconNode.innerHTML;
     iconNode.innerHTML = `<span style="color:var(--primary); font-size: 0.75rem; font-weight: bold;">COPIED!</span>`;
@@ -211,43 +191,37 @@ function showConfirm(message, callback) {
   document.getElementById('confirm-modal').classList.remove('hidden');
   confirmCallback = callback;
 }
-function executeConfirm() {
-  document.getElementById('confirm-modal').classList.add('hidden');
-  if (confirmCallback) confirmCallback();
-}
-function cancelConfirm() {
-  document.getElementById('confirm-modal').classList.add('hidden');
-  confirmCallback = null;
-}
-
+function executeConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); if (confirmCallback) confirmCallback(); }
+function cancelConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); confirmCallback = null; }
 function openInfoModal() { document.getElementById('info-modal').classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
 // ==========================================
 // SECURE HANDSHAKE
 // ==========================================
-
 async function handleCreate(e) {
   e.preventDefault();
-  currentPassword = document.getElementById('create-password').value;
-  
-  await setupE2EEKey(currentPassword);
-  const serverSafePassword = await hashPasswordForServer(currentPassword);
+  try {
+    currentPassword = document.getElementById('create-password').value;
+    await setupE2EEKey(currentPassword);
+    const serverSafePassword = await hashPasswordForServer(currentPassword);
 
-  socket.emit('create-room', { password: serverSafePassword }, (res) => {
-    if (res.success) {
-      isCreator = true;
-      currentRoomId = res.id;
-      rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
-      
-      document.getElementById('lobby-view').classList.add('hidden');
-      document.getElementById('success-view').classList.remove('hidden');
-      document.getElementById('disp-id').innerText = currentRoomId;
-      document.getElementById('disp-pass').innerText = currentPassword; 
-      
-      setupWebRTC();
-    }
-  });
+    socket.emit('create-room', { password: serverSafePassword }, (res) => {
+      if (res.success) {
+        isCreator = true; currentRoomId = res.id;
+        rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
+        document.getElementById('lobby-view').classList.add('hidden');
+        document.getElementById('success-view').classList.remove('hidden');
+        document.getElementById('disp-id').innerText = currentRoomId;
+        document.getElementById('disp-pass').innerText = currentPassword; 
+        setupWebRTC();
+      } else {
+        document.getElementById('error-message').textContent = '[ERROR] Server failed to create room.';
+      }
+    });
+  } catch (err) {
+    document.getElementById('error-message').textContent = 'Error during creation: ' + err.message;
+  }
 }
 
 function enterGeneratedRoom() {
@@ -257,24 +231,25 @@ function enterGeneratedRoom() {
 
 async function handleJoin(e) {
   e.preventDefault();
-  currentRoomId = document.getElementById('join-code').value.toUpperCase();
-  currentPassword = document.getElementById('join-password').value;
+  try {
+    currentRoomId = document.getElementById('join-code').value.toUpperCase();
+    currentPassword = document.getElementById('join-password').value;
+    await setupE2EEKey(currentPassword);
+    const serverSafePassword = await hashPasswordForServer(currentPassword);
 
-  await setupE2EEKey(currentPassword);
-  const serverSafePassword = await hashPasswordForServer(currentPassword);
-
-  socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
-    if (res.success) {
-      isCreator = false;
-      rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
-      
-      if (!peerConnection) setupWebRTC(); 
-      openChatInterface();
-      displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
-    } else {
-      document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
-    }
-  });
+    socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
+      if (res.success) {
+        isCreator = false; rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
+        if (!peerConnection) setupWebRTC(); 
+        openChatInterface();
+        displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
+      } else {
+        document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
+      }
+    });
+  } catch (err) {
+    document.getElementById('error-message').textContent = 'Error joining: ' + err.message;
+  }
 }
 
 function openChatInterface() {
@@ -289,403 +264,289 @@ function openChatInterface() {
 // ==========================================
 // WEBRTC & BINARY DATA CHANNEL
 // ==========================================
-
 function setupWebRTC() {
-  if (peerConnection || !rtcConfig) return; 
-  peerConnection = new RTCPeerConnection(rtcConfig);
-  let hasIceCandidates = false;
-  
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      hasIceCandidates = true;
-      socket.emit('webrtc-ice', event.candidate);
-    }
-  };
-
-  peerConnection.onicegatheringstatechange = () => {
-    if (peerConnection.iceGatheringState === 'complete' && !hasIceCandidates) {
-      displaySystemMessage('[WARNING] WebRTC candidates blocked. Check browser shields.', 'danger');
-    }
-  };
-
-  peerConnection.onconnectionstatechange = () => {
-    if (peerConnection.connectionState === 'connected') {
-      displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active.', 'success');
-    } else if (peerConnection.connectionState === 'failed') {
-      displaySystemMessage('[ERROR] Network firewall blocked direct connection.', 'danger');
-    }
-  };
-
-  if (isCreator) {
-    dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true });
-    setupDataChannel();
-  } else {
-    peerConnection.ondatachannel = (event) => {
-      dataChannel = event.channel;
-      setupDataChannel();
+  try {
+    if (peerConnection || !rtcConfig) return; 
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) socket.emit('webrtc-ice', event.candidate);
     };
+
+    // Robust Network Failure Detection
+    peerConnection.oniceconnectionstatechange = () => {
+      const state = peerConnection.iceConnectionState;
+      if (state === 'failed') {
+        displaySystemMessage('[ERROR] Network firewall blocked direct connection. You or your peer may be on a strict network (Symmetric NAT) and the TURN server is unavailable.', 'danger');
+      } else if (state === 'disconnected') {
+        displaySystemMessage('[WARNING] Peer disconnected or network connection lost.', 'danger');
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      if (peerConnection.connectionState === 'connected') {
+        displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active. You can now chat securely.', 'success');
+      } else if (peerConnection.connectionState === 'failed') {
+        displaySystemMessage('[ERROR] P2P tunnel failed to establish.', 'danger');
+      }
+    };
+
+    if (isCreator) {
+      dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true });
+      setupDataChannel();
+    } else {
+      peerConnection.ondatachannel = (event) => {
+        dataChannel = event.channel;
+        setupDataChannel();
+      };
+    }
+  } catch (err) {
+    displaySystemMessage(`[ERROR] WebRTC Initialization Failed: ${err.message}`, 'danger');
   }
 }
 
 function setupDataChannel() {
-  dataChannel.binaryType = 'arraybuffer';
-  dataChannel.bufferedAmountLowThreshold = 256 * 1024; // 256KB threshold for high-speed streaming
+  try {
+    dataChannel.binaryType = 'arraybuffer';
+    dataChannel.bufferedAmountLowThreshold = 256 * 1024; 
 
-  dataChannel.onopen = () => displaySystemMessage('Secure binary tunnel ready.', 'success');
-  dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
-  
-  dataChannel.onmessage = async (event) => {
-    // 1. Check for Raw Binary Chunks (Streamed Big Files)
-    if (event.data instanceof ArrayBuffer) {
-      await handleIncomingBinaryChunk(event.data);
-      return;
-    }
+    dataChannel.onopen = () => displaySystemMessage('Secure binary tunnel ready.', 'success');
+    dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
+    dataChannel.onerror = (error) => displaySystemMessage('[ERROR] Data channel error occurred.', 'danger');
+    
+    dataChannel.onmessage = async (event) => {
+      try {
+        if (event.data instanceof ArrayBuffer) {
+          await handleIncomingBinaryChunk(event.data);
+          return;
+        }
 
-    // 2. Otherwise handle Encrypted JSON Payloads
-    let payload;
-    try {
-      const parsed = JSON.parse(event.data);
-      if (parsed.e2ee) {
-        const iv = base64ToBuffer(parsed.iv);
-        const ct = base64ToBuffer(parsed.ct);
-        const decrypted = await window.crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: new Uint8Array(iv) },
-          e2eeKey,
-          ct
-        );
-        payload = JSON.parse(textDecoder.decode(decrypted));
-      } else {
-        payload = parsed;
+        let payload;
+        const parsed = JSON.parse(event.data);
+        if (parsed.e2ee) {
+          const decrypted = await window.crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.iv)) },
+            e2eeKey,
+            base64ToBuffer(parsed.ct)
+          );
+          payload = JSON.parse(textDecoder.decode(decrypted));
+        } else { payload = parsed; }
+
+        if (payload.type === 'obfuscation') return;
+        if (payload.type === 'file_start') handleRemoteFileStart(payload);
+        else if (payload.type === 'file_end') handleRemoteFileEnd(payload);
+        else renderMessage(payload, false);
+      } catch (err) {
+        console.error("Message parsing failed:", err);
       }
-    } catch (err) {
-      return; 
-    }
-
-    if (payload.type === 'obfuscation') return;
-
-    if (payload.type === 'file_start') {
-      handleRemoteFileStart(payload);
-    } 
-    else if (payload.type === 'file_end') {
-      handleRemoteFileEnd(payload);
-    } 
-    else {
-      renderMessage(payload, false);
-    }
-  };
+    };
+  } catch (err) {
+    displaySystemMessage(`[ERROR] Data Channel Setup Failed: ${err.message}`, 'danger');
+  }
 }
 
 // ==========================================
 // HIGH-PERFORMANCE STREAMED FILE HANDLING
 // ==========================================
-
 async function sendFileStream(file) {
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[ERROR] Connection is not ready.', 'danger');
-    return;
-  }
-
-  const budget = await calculateStorageBudget();
-  if (file.size > budget) {
-    displaySystemMessage(`[SECURITY] File (${formatBytes(file.size)}) exceeds your device storage safety ceiling (${formatBytes(budget)}).`, 'danger');
-    return;
-  }
-
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  const fileToken = Math.floor(Math.random() * 2147483647);
-  const fileIdStr = fileToken.toString();
-
-  await sendEncryptedPayload({
-    type: 'file_start',
-    fileId: fileIdStr,
-    fileName: file.name,
-    fileSize: file.size,
-    mime: file.type || 'application/octet-stream',
-    totalChunks: totalChunks
-  });
-
-  renderTransferProgress(fileIdStr, file.name, file.size, true);
-
-  let currentChunk = 0;
-  activeSendAborts.set(fileIdStr, false);
-
-  async function pushStream() {
-    while (currentChunk < totalChunks) {
-      if (activeSendAborts.get(fileIdStr) || !dataChannel || dataChannel.readyState !== 'open') {
-        removeTransferProgress(fileIdStr);
-        activeSendAborts.delete(fileIdStr);
-        return;
-      }
-
-      if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
-        await new Promise(resolve => {
-          dataChannel.onbufferedamountlow = () => {
-            dataChannel.onbufferedamountlow = null;
-            resolve();
-          };
-        });
-      }
-
-      const start = currentChunk * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const blobSlice = file.slice(start, end);
-      const rawChunk = await blobSlice.arrayBuffer();
-
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const encryptedData = await window.crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: iv },
-        e2eeKey,
-        rawChunk
-      );
-
-      const packet = new Uint8Array(20 + encryptedData.byteLength);
-      const view = new DataView(packet.buffer);
-      view.setUint32(0, fileToken);
-      view.setUint32(4, currentChunk);
-      packet.set(iv, 8);
-      packet.set(new Uint8Array(encryptedData), 20);
-
-      dataChannel.send(packet.buffer);
-
-      currentChunk++;
-      updateTransferProgress(fileIdStr, currentChunk, totalChunks);
+  try {
+    if (!dataChannel || dataChannel.readyState !== 'open') {
+      displaySystemMessage('[ERROR] Cannot send file. Connection is not fully active.', 'danger');
+      return;
     }
 
-    await sendEncryptedPayload({ type: 'file_end', fileId: fileIdStr });
-    removeTransferProgress(fileIdStr);
-    activeSendAborts.delete(fileIdStr);
-    renderCompletedFileCard({ name: file.name, size: file.size, mime: file.type }, null, true);
-  }
+    const budget = await calculateStorageBudget();
+    if (file.size > budget) {
+      displaySystemMessage(`[SECURITY] File (${formatBytes(file.size)}) exceeds device safety limit (${formatBytes(budget)}).`, 'danger');
+      return;
+    }
 
-  pushStream();
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const fileToken = Math.floor(Math.random() * 2147483647);
+    const fileIdStr = fileToken.toString();
+
+    await sendEncryptedPayload({
+      type: 'file_start', fileId: fileIdStr, fileName: file.name, fileSize: file.size, mime: file.type || 'application/octet-stream', totalChunks: totalChunks
+    });
+
+    renderTransferProgress(fileIdStr, file.name, file.size, true);
+    let currentChunk = 0; activeSendAborts.set(fileIdStr, false);
+
+    async function pushStream() {
+      try {
+        while (currentChunk < totalChunks) {
+          if (activeSendAborts.get(fileIdStr) || !dataChannel || dataChannel.readyState !== 'open') {
+            removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr); return;
+          }
+
+          if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
+            await new Promise(resolve => {
+              dataChannel.onbufferedamountlow = () => { dataChannel.onbufferedamountlow = null; resolve(); };
+            });
+          }
+
+          const rawChunk = await file.slice(currentChunk * CHUNK_SIZE, Math.min((currentChunk + 1) * CHUNK_SIZE, file.size)).arrayBuffer();
+          const iv = window.crypto.getRandomValues(new Uint8Array(12));
+          const encryptedData = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, e2eeKey, rawChunk);
+          
+          const packet = new Uint8Array(20 + encryptedData.byteLength);
+          const view = new DataView(packet.buffer);
+          view.setUint32(0, fileToken); view.setUint32(4, currentChunk);
+          packet.set(iv, 8); packet.set(new Uint8Array(encryptedData), 20);
+
+          dataChannel.send(packet.buffer);
+          currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
+        }
+
+        await sendEncryptedPayload({ type: 'file_end', fileId: fileIdStr });
+        removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr);
+        renderCompletedFileCard({ name: file.name, size: file.size, mime: file.type }, null, true);
+      } catch (err) {
+        displaySystemMessage(`[ERROR] File transmission interrupted: ${err.message}`, 'danger');
+      }
+    }
+    pushStream();
+  } catch (err) {
+    displaySystemMessage(`[ERROR] Failed to initiate file transfer: ${err.message}`, 'danger');
+  }
 }
 
 function handleRemoteFileStart(meta) {
   incomingFiles[meta.fileId] = {
-    name: meta.fileName,
-    size: meta.fileSize,
-    mime: meta.mime,
-    totalChunks: meta.totalChunks,
-    receivedChunks: 0,
-    chunks: new Array(meta.totalChunks)
+    name: meta.fileName, size: meta.fileSize, mime: meta.mime, totalChunks: meta.totalChunks, receivedChunks: 0, chunks: new Array(meta.totalChunks)
   };
   renderTransferProgress(meta.fileId, meta.fileName, meta.size, false);
 }
 
 async function handleIncomingBinaryChunk(buffer) {
   if (buffer.byteLength < 20 || !e2eeKey) return;
-
-  const view = new DataView(buffer);
-  const fileToken = view.getUint32(0);
-  const chunkIndex = view.getUint32(4);
-  const fileIdStr = fileToken.toString();
-
-  const session = incomingFiles[fileIdStr];
-  if (!session) return;
-
-  const iv = new Uint8Array(buffer, 8, 12);
-  const ciphertext = new Uint8Array(buffer, 20);
-
   try {
+    const view = new DataView(buffer);
+    const fileIdStr = view.getUint32(0).toString();
+    const session = incomingFiles[fileIdStr];
+    if (!session) return;
+
     const decryptedChunk = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv },
+      { name: 'AES-GCM', iv: new Uint8Array(buffer, 8, 12) },
       e2eeKey,
-      ciphertext
+      new Uint8Array(buffer, 20)
     );
 
-    session.chunks[chunkIndex] = decryptedChunk;
+    session.chunks[view.getUint32(4)] = decryptedChunk;
     session.receivedChunks++;
     updateTransferProgress(fileIdStr, session.receivedChunks, session.totalChunks);
   } catch (err) {
-    console.error("Corrupt binary chunk dropped");
+    console.error("Corrupt binary chunk dropped", err);
   }
 }
 
 function handleRemoteFileEnd(payload) {
-  const session = incomingFiles[payload.fileId];
-  if (!session) return;
-
-  removeTransferProgress(payload.fileId);
-
-  const fileBlob = new Blob(session.chunks, { type: session.mime || 'application/octet-stream' });
-  delete incomingFiles[payload.fileId]; 
-
-  const downloadUrl = URL.createObjectURL(fileBlob);
-  renderCompletedFileCard({ name: session.name, size: session.size, mime: session.mime }, downloadUrl, false);
+  try {
+    const session = incomingFiles[payload.fileId];
+    if (!session) return;
+    removeTransferProgress(payload.fileId);
+    const fileBlob = new Blob(session.chunks, { type: session.mime || 'application/octet-stream' });
+    delete incomingFiles[payload.fileId]; 
+    renderCompletedFileCard({ name: session.name, size: session.size, mime: session.mime }, URL.createObjectURL(fileBlob), false);
+  } catch (err) {
+    displaySystemMessage(`[ERROR] Failed to finalize received file: ${err.message}`, 'danger');
+  }
 }
 
 // ==========================================
 // FILE UI & CARD RENDERING
 // ==========================================
-
 function renderTransferProgress(id, name, size, isUploading) {
   const container = document.getElementById('messages-container');
   const progressBox = document.createElement('div');
   progressBox.className = `msg system file-progress-card`;
   progressBox.id = `transfer-${id}`;
-  
   progressBox.innerHTML = `
-    <div class="progress-info">
-      <span class="file-name">${name}</span>
-      <span class="file-action">${isUploading ? 'UPLOADING' : 'RECEIVING'} (${formatBytes(size)})</span>
-    </div>
-    <div class="progress-track">
-      <div class="progress-fill" id="bar-${id}" style="width: 0%;"></div>
-    </div>
-    <div class="progress-percent" id="pct-${id}">0%</div>
-  `;
-  
-  container.appendChild(progressBox);
-  container.scrollTop = container.scrollHeight;
+    <div class="progress-info"><span class="file-name">${name}</span><span class="file-action">${isUploading ? 'UPLOADING' : 'RECEIVING'} (${formatBytes(size)})</span></div>
+    <div class="progress-track"><div class="progress-fill" id="bar-${id}" style="width: 0%;"></div></div>
+    <div class="progress-percent" id="pct-${id}">0%</div>`;
+  container.appendChild(progressBox); container.scrollTop = container.scrollHeight;
 }
-
 function updateTransferProgress(id, current, total) {
   const percent = Math.min(100, Math.round((current / total) * 100));
-  const bar = document.getElementById(`bar-${id}`);
-  const text = document.getElementById(`pct-${id}`);
-  if (bar) bar.style.width = `${percent}%`;
-  if (text) text.textContent = `${percent}%`;
+  const bar = document.getElementById(`bar-${id}`); const text = document.getElementById(`pct-${id}`);
+  if (bar) bar.style.width = `${percent}%`; if (text) text.textContent = `${percent}%`;
 }
-
-function removeTransferProgress(id) {
-  const card = document.getElementById(`transfer-${id}`);
-  if (card) card.remove();
-}
-
+function removeTransferProgress(id) { const card = document.getElementById(`transfer-${id}`); if (card) card.remove(); }
 function renderCompletedFileCard(fileInfo, blobUrl, isMe) {
   const container = document.getElementById('messages-container');
-  const msgEl = document.createElement('div');
-  msgEl.className = `msg ${isMe ? 'outgoing' : 'incoming'} file-msg-card`;
+  const msgEl = document.createElement('div'); msgEl.className = `msg ${isMe ? 'outgoing' : 'incoming'} file-msg-card`;
 
-  const isImage = fileInfo.mime.startsWith('image/') && blobUrl && fileInfo.size < 50 * 1024 * 1024;
-  const isAudio = fileInfo.mime.startsWith('audio/') && blobUrl;
-
-  if (isImage) {
-    const img = document.createElement('img');
-    img.src = blobUrl;
-    img.className = 'media-content clickable-media';
-    img.onclick = () => {
-      document.getElementById('modal-img').src = blobUrl;
-      document.getElementById('media-modal').classList.remove('hidden');
-    };
+  if (fileInfo.mime.startsWith('image/') && blobUrl && fileInfo.size < 50 * 1024 * 1024) {
+    const img = document.createElement('img'); img.src = blobUrl; img.className = 'media-content clickable-media';
+    img.onclick = () => { document.getElementById('modal-img').src = blobUrl; document.getElementById('media-modal').classList.remove('hidden'); };
     msgEl.appendChild(img);
-  } else if (isAudio) {
-    const audio = document.createElement('audio');
-    audio.src = blobUrl;
-    audio.controls = true;
-    audio.playsInline = true;
-    audio.className = 'media-content';
+  } else if (fileInfo.mime.startsWith('audio/') && blobUrl) {
+    const audio = document.createElement('audio'); audio.src = blobUrl; audio.controls = true; audio.playsInline = true; audio.className = 'media-content';
     msgEl.appendChild(audio);
   }
 
-  const fileDetail = document.createElement('div');
-  fileDetail.className = 'file-payload-details';
-  fileDetail.innerHTML = `
-    <div class="file-meta">
-      <svg class="file-icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-      <div class="file-info-text">
-        <strong class="file-title">${fileInfo.name}</strong>
-        <span class="file-size-badge">${formatBytes(fileInfo.size)}</span>
-      </div>
-    </div>
-  `;
+  const fileDetail = document.createElement('div'); fileDetail.className = 'file-payload-details';
+  fileDetail.innerHTML = `<div class="file-meta"><svg class="file-icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg><div class="file-info-text"><strong class="file-title">${fileInfo.name}</strong><span class="file-size-badge">${formatBytes(fileInfo.size)}</span></div></div>`;
 
   if (blobUrl) {
-    const downloadBtn = document.createElement('a');
-    downloadBtn.href = blobUrl;
-    downloadBtn.download = fileInfo.name;
-    downloadBtn.className = 'btn-file-download';
-    downloadBtn.textContent = 'DOWNLOAD FILE';
+    const downloadBtn = document.createElement('a'); downloadBtn.href = blobUrl; downloadBtn.download = fileInfo.name; downloadBtn.className = 'btn-file-download'; downloadBtn.textContent = 'DOWNLOAD FILE';
     fileDetail.appendChild(downloadBtn);
   } else {
-    const sentBadge = document.createElement('span');
-    sentBadge.className = 'sent-badge';
-    sentBadge.textContent = 'SENT SUCCESSFULLY';
+    const sentBadge = document.createElement('span'); sentBadge.className = 'sent-badge'; sentBadge.textContent = 'SENT SUCCESSFULLY';
     fileDetail.appendChild(sentBadge);
   }
 
-  msgEl.appendChild(fileDetail);
-  container.appendChild(msgEl);
-  container.scrollTop = container.scrollHeight;
+  msgEl.appendChild(fileDetail); container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
 
 // ==========================================
 // TEXT, AUDIO & CALL LOGIC
 // ==========================================
-
 async function handleSendText() {
-  const input = document.getElementById('message-input');
-  const text = input.value.trim();
-  
+  const input = document.getElementById('message-input'); const text = input.value.trim();
   if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
-  
-  const payload = { type: 'text', data: text };
   try {
+    const payload = { type: 'text', data: text };
     await sendEncryptedPayload(payload);
-    renderMessage(payload, true);
-    input.value = '';
-  } catch(e) {
-    displaySystemMessage('[ERROR] Failed to send encrypted transmission.', 'danger');
-  }
+    renderMessage(payload, true); input.value = '';
+  } catch(e) { displaySystemMessage('[ERROR] Failed to send encrypted message.', 'danger'); }
 }
 
 function handleFileSelect(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  showConfirm(`Send ${file.name} (${formatBytes(file.size)})?`, () => {
-    sendFileStream(file);
-    event.target.value = ''; 
-  });
+  try {
+    const file = event.target.files[0]; if (!file) return;
+    showConfirm(`Send ${file.name} (${formatBytes(file.size)})?`, () => { sendFileStream(file); event.target.value = ''; });
+  } catch (err) { displaySystemMessage(`[ERROR] File selection failed: ${err.message}`, 'danger'); }
 }
 
 async function toggleMic() {
-  const micBtn = document.getElementById('mic-btn');
-  
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[SYSTEM ALERT] Connection is not ready.', 'danger');
-    return;
-  }
-  
-  if (!isRecording) {
-    try {
+  if (!dataChannel || dataChannel.readyState !== 'open') { displaySystemMessage('[ERROR] Connection is not ready for audio.', 'danger'); return; }
+  try {
+    if (!isRecording) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      let selectedMimeType = 'audio/webm';
-      if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        selectedMimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
-      }
-
-      mediaRecorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
+      let selectedMimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
+      mediaRecorder = new MediaRecorder(stream, selectedMimeType ? { mimeType: selectedMimeType } : {});
       audioChunks = [];
-      
       mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-      
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunks, { type: selectedMimeType || 'audio/mp4' });
-        const audioFile = new File([audioBlob], `voice_${Date.now()}.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`, { type: audioBlob.type });
-        sendFileStream(audioFile);
+        sendFileStream(new File([audioBlob], `voice_${Date.now()}.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`, { type: audioBlob.type }));
         stream.getTracks().forEach(track => track.stop());
       };
-
-      mediaRecorder.start();
-      isRecording = true;
-      micBtn.classList.add('recording');
-    } catch (err) {
-      displaySystemMessage('[ERROR] Microphone access denied.', 'danger');
+      mediaRecorder.start(); isRecording = true; document.getElementById('mic-btn').classList.add('recording');
+    } else {
+      mediaRecorder.stop(); isRecording = false; document.getElementById('mic-btn').classList.remove('recording');
     }
-  } else {
-    mediaRecorder.stop();
-    isRecording = false;
-    micBtn.classList.remove('recording');
-  }
+  } catch (err) { displaySystemMessage(`[ERROR] Microphone access denied or unavailable: ${err.message}`, 'danger'); }
 }
 
-// Call Engine
 function requestCall() {
-  if (isCallActive) return;
-  amICaller = true;
-  socket.emit('call-request', { isVideo: false });
-  displaySystemMessage(`Dialing peer for Voice Call...`);
+  try {
+    if (isCallActive) return;
+    amICaller = true; socket.emit('call-request', { isVideo: false });
+    displaySystemMessage(`Dialing peer for Voice Call...`);
+  } catch (err) { displaySystemMessage(`[ERROR] Call request failed: ${err.message}`, 'danger'); }
 }
 
 socket.on('call-request', () => {
@@ -698,230 +559,171 @@ socket.on('call-request', () => {
 async function acceptCall() {
   document.getElementById('incoming-call-modal').classList.add('hidden');
   displaySystemMessage('[SYSTEM] Connecting voice hardware...', 'normal');
-  await startCallEngine(); 
-  socket.emit('call-response', { accepted: true }); 
+  try { await startCallEngine(); socket.emit('call-response', { accepted: true }); }
+  catch (err) { displaySystemMessage(`[ERROR] Failed to accept call: ${err.message}`, 'danger'); }
 }
 
-function rejectCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  socket.emit('call-response', { accepted: false });
-}
+function rejectCall() { document.getElementById('incoming-call-modal').classList.add('hidden'); socket.emit('call-response', { accepted: false }); }
 
 socket.on('call-response', async (data) => {
   if (data.accepted) {
     displaySystemMessage('Call accepted. Connecting...', 'success');
-    await startCallEngine(); 
+    try { await startCallEngine(); } catch (err) { displaySystemMessage(`[ERROR] Engine failure: ${err.message}`, 'danger'); }
   } else {
-    displaySystemMessage(`Call declined${data.reason ? ' (' + data.reason + ')' : ''}.`, 'danger');
-    amICaller = false;
+    displaySystemMessage(`Call declined${data.reason ? ' (' + data.reason + ')' : ''}.`, 'danger'); amICaller = false;
   }
 });
 
 async function startCallEngine() {
-  isCallActive = true;
-  document.getElementById('call-ui').classList.remove('hidden');
-  
+  isCallActive = true; document.getElementById('call-ui').classList.remove('hidden');
   try {
     callStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     callConnection = new RTCPeerConnection(rtcConfig);
     
-    callConnection.onicecandidate = (event) => {
-      if (event.candidate) socket.emit('call-ice', event.candidate);
-    };
-
+    callConnection.onicecandidate = (event) => { if (event.candidate) socket.emit('call-ice', event.candidate); };
     callConnection.ontrack = (event) => {
       const remoteAudio = document.getElementById('remote-audio');
       if (remoteAudio.srcObject !== event.streams[0]) {
-        remoteAudio.srcObject = event.streams[0];
-        remoteAudio.muted = true;
-        setupAudioAmplifier(event.streams[0]);
-        remoteAudio.play().catch(() => {});
+        remoteAudio.srcObject = event.streams[0]; remoteAudio.muted = true;
+        setupAudioAmplifier(event.streams[0]); remoteAudio.play().catch(() => {});
       }
     };
 
-    callStream.getTracks().forEach(track => {
-      callConnection.addTrack(track, callStream);
-    });
+    callStream.getTracks().forEach(track => { callConnection.addTrack(track, callStream); });
 
     if (amICaller) {
       const offer = await callConnection.createOffer();
       await callConnection.setLocalDescription(offer);
       socket.emit('call-offer', offer);
     }
-
   } catch (err) {
-    displaySystemMessage(`[CALL FAILED] Microphone access denied.`, 'danger');
+    displaySystemMessage(`[CALL ERROR] Hardware setup failed: ${err.message}`, 'danger');
     endCall();
   }
 }
 
 socket.on('call-offer', async (offer) => {
   if (!isCallActive || !callConnection) return;
-  await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  while (pendingCallIce.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {});
-  }
-  const answer = await callConnection.createAnswer();
-  await callConnection.setLocalDescription(answer);
-  socket.emit('call-answer', answer);
+  try {
+    await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    while (pendingCallIce.length) { callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {}); }
+    const answer = await callConnection.createAnswer();
+    await callConnection.setLocalDescription(answer);
+    socket.emit('call-answer', answer);
+  } catch (err) { displaySystemMessage(`[ERROR] Call negotiation failed: ${err.message}`, 'danger'); }
 });
 
 socket.on('call-answer', async (answer) => {
   if (!isCallActive || !callConnection) return;
-  await callConnection.setRemoteDescription(new RTCSessionDescription(answer));
-  while (pendingCallIce.length) {
-    callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {});
-  }
+  try {
+    await callConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    while (pendingCallIce.length) { callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {}); }
+  } catch (err) { displaySystemMessage(`[ERROR] Call response failed: ${err.message}`, 'danger'); }
 });
 
 socket.on('call-ice', async (candidate) => {
   if (callConnection && callConnection.remoteDescription && callConnection.remoteDescription.type) {
     callConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
-  } else {
-    pendingCallIce.push(candidate); 
-  }
+  } else { pendingCallIce.push(candidate); }
 });
 
 function toggleCallMic() {
-  if (!callStream) return;
-  const audioTrack = callStream.getAudioTracks()[0];
-  if (audioTrack) {
-    audioTrack.enabled = !audioTrack.enabled;
-    document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)';
-  }
+  try {
+    if (!callStream) return;
+    const audioTrack = callStream.getAudioTracks()[0];
+    if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)'; }
+  } catch (err) { console.error("Mic toggle failed", err); }
 }
 
 function setupAudioAmplifier(stream) {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  
-  if (sourceNode) sourceNode.disconnect();
-  if (gainNode) gainNode.disconnect();
-  
-  sourceNode = audioCtx.createMediaStreamSource(stream);
-  gainNode = audioCtx.createGain();
-  
-  const slider = document.getElementById('volume-slider');
-  gainNode.gain.value = slider ? parseFloat(slider.value) : 1.5;
-  
-  sourceNode.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (sourceNode) sourceNode.disconnect(); if (gainNode) gainNode.disconnect();
+    
+    sourceNode = audioCtx.createMediaStreamSource(stream);
+    gainNode = audioCtx.createGain();
+    const slider = document.getElementById('volume-slider'); gainNode.gain.value = slider ? parseFloat(slider.value) : 1.5;
+    
+    sourceNode.connect(gainNode); gainNode.connect(audioCtx.destination);
+  } catch (err) { displaySystemMessage(`[WARNING] Amplifier setup failed, using native volume.`, 'danger'); }
 }
 
 function adjustVolume(value) {
-  if (gainNode) {
-    gainNode.gain.value = parseFloat(value);
-  } else {
-    const remoteAudio = document.getElementById('remote-audio');
-    if (remoteAudio) {
-      remoteAudio.muted = false;
-      remoteAudio.volume = Math.min(parseFloat(value), 1.0); 
-    }
-  }
+  try {
+    if (gainNode) { gainNode.gain.value = parseFloat(value); }
+    else { const remoteAudio = document.getElementById('remote-audio'); if (remoteAudio) { remoteAudio.muted = false; remoteAudio.volume = Math.min(parseFloat(value), 1.0); } }
+  } catch (err) { console.error("Volume adjustment failed", err); }
 }
 
 function endCall() {
-  if (!isCallActive) return;
-  isCallActive = false;
-  amICaller = false;
-  
-  if (callStream) {
-    callStream.getTracks().forEach(track => track.stop());
-    callStream = null;
-  }
-  if (callConnection) {
-    callConnection.close();
-    callConnection = null;
-  }
-  
-  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
-  if (gainNode) { gainNode.disconnect(); gainNode = null; }
-  
-  const remoteAudio = document.getElementById('remote-audio');
-  if (remoteAudio) remoteAudio.srcObject = null;
-  
-  document.getElementById('call-ui').classList.add('hidden');
-  socket.emit('call-end');
-  displaySystemMessage('Call ended.', 'normal');
+  try {
+    if (!isCallActive) return;
+    isCallActive = false; amICaller = false;
+    if (callStream) { callStream.getTracks().forEach(track => track.stop()); callStream = null; }
+    if (callConnection) { callConnection.close(); callConnection = null; }
+    if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+    if (gainNode) { gainNode.disconnect(); gainNode = null; }
+    const remoteAudio = document.getElementById('remote-audio'); if (remoteAudio) remoteAudio.srcObject = null;
+    document.getElementById('call-ui').classList.add('hidden');
+    socket.emit('call-end'); displaySystemMessage('Call ended.', 'normal');
+  } catch (err) { console.error("Error ending call", err); }
 }
 
 socket.on('call-end', () => { if (isCallActive) endCall(); });
 
-// Standard Text Message Rendering
 function renderMessage(payload, isMe) {
   const container = document.getElementById('messages-container');
-  const msgEl = document.createElement('div');
-  msgEl.className = `msg ${isMe ? 'outgoing' : 'incoming'}`;
-
-  if (payload.type === 'text') {
-    const textNode = document.createElement('div');
-    textNode.textContent = payload.data; 
-    msgEl.appendChild(textNode);
-  }
-
-  container.appendChild(msgEl);
-  container.scrollTop = container.scrollHeight;
+  const msgEl = document.createElement('div'); msgEl.className = `msg ${isMe ? 'outgoing' : 'incoming'}`;
+  if (payload.type === 'text') { const textNode = document.createElement('div'); textNode.textContent = payload.data; msgEl.appendChild(textNode); }
+  container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
 
 function displaySystemMessage(text, type = 'normal') {
   const container = document.getElementById('messages-container');
-  const msgEl = document.createElement('div');
-  msgEl.className = `msg system ${type}`;
-  msgEl.textContent = text;
-  container.appendChild(msgEl);
-  container.scrollTop = container.scrollHeight;
+  const msgEl = document.createElement('div'); msgEl.className = `msg system ${type}`; msgEl.textContent = text;
+  container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
 
 function performLocalPurge() {
-  if (peerConnection) { peerConnection.close(); peerConnection = null; }
-  if (callConnection) { callConnection.close(); callConnection = null; }
-  if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+  try {
+    if (peerConnection) { peerConnection.close(); peerConnection = null; }
+    if (callConnection) { callConnection.close(); callConnection = null; }
+    if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
+    if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+    if (gainNode) { gainNode.disconnect(); gainNode = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
-  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
-  if (gainNode) { gainNode.disconnect(); gainNode = null; }
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    pendingChatIce = []; pendingCallIce = [];
+    document.getElementById('messages-container').innerHTML = '';
+    document.getElementById('chat-view').classList.add('hidden'); document.getElementById('call-ui').classList.add('hidden');
+    document.getElementById('incoming-call-modal').classList.add('hidden'); document.getElementById('lobby-view').classList.remove('hidden');
 
-  pendingChatIce = [];
-  pendingCallIce = [];
-
-  document.getElementById('messages-container').innerHTML = '';
-  document.getElementById('chat-view').classList.add('hidden');
-  document.getElementById('call-ui').classList.add('hidden');
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  document.getElementById('lobby-view').classList.remove('hidden');
-
-  currentRoomId = null;
-  currentPassword = null;
-  e2eeKey = null; 
-  isCallActive = false;
+    currentRoomId = null; currentPassword = null; e2eeKey = null; isCallActive = false;
+  } catch (err) { console.error("Purge failure:", err); }
 }
 
 function requestPurge() {
   showConfirm("Are you sure you want to leave and destroy the chat?", () => {
     socket.emit('shred-room');
-    const alertModal = document.getElementById('purge-alert');
-    alertModal.classList.remove('hidden');
-    performLocalPurge();
-    setTimeout(() => alertModal.classList.add('hidden'), 3500); 
+    const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
+    performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
   });
 }
 
 socket.on('room-shredded', () => {
-  const alertModal = document.getElementById('purge-alert');
-  alertModal.classList.remove('hidden');
-  performLocalPurge();
-  setTimeout(() => alertModal.classList.add('hidden'), 3500); 
+  const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
+  performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
 });
 
 // Periodic dummy traffic obfuscation
 setInterval(() => {
   if (dataChannel && dataChannel.readyState === 'open') {
-    const randomSize = Math.floor(Math.random() * 128) + 16;
-    const garbage = new Uint8Array(randomSize);
-    crypto.getRandomValues(garbage);
-    sendEncryptedPayload({ type: 'obfuscation', data: Array.from(garbage) });
+    try {
+      const randomSize = Math.floor(Math.random() * 128) + 16;
+      const garbage = new Uint8Array(randomSize); crypto.getRandomValues(garbage);
+      sendEncryptedPayload({ type: 'obfuscation', data: Array.from(garbage) });
+    } catch (e) {}
   }
 }, Math.random() * 4000 + 2000);
 
@@ -934,7 +736,7 @@ socket.on('peer-joined', async () => {
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       socket.emit('webrtc-offer', offer);
-    } catch (err) { console.error(err); }
+    } catch (err) { displaySystemMessage(`[ERROR] Offer creation failed: ${err.message}`, 'danger'); }
   }
 });
 
@@ -946,10 +748,8 @@ socket.on('webrtc-offer', async (offer) => {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc-answer', answer);
-      while (pendingChatIce.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {});
-      }
-    } catch (err) { console.error(err); }
+      while (pendingChatIce.length) { peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {}); }
+    } catch (err) { displaySystemMessage(`[ERROR] Processing offer failed: ${err.message}`, 'danger'); }
   }
 });
 
@@ -957,19 +757,17 @@ socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      while (pendingChatIce.length) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {});
-      }
-    } catch (err) { console.error(err); }
+      while (pendingChatIce.length) { peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {}); }
+    } catch (err) { displaySystemMessage(`[ERROR] Processing answer failed: ${err.message}`, 'danger'); }
   }
 });
 
 socket.on('webrtc-ice', async (candidate) => {
-  if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
-  } else {
-    pendingChatIce.push(candidate);
-  }
+  try {
+    if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+      peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+    } else { pendingChatIce.push(candidate); }
+  } catch (err) { console.error("ICE processing error", err); }
 });
 
 // Manifesto Timer
@@ -982,18 +780,12 @@ document.addEventListener('DOMContentLoaded', () => {
   updateTimerDisplay();
 
   const timerInterval = setInterval(() => {
-    timeLeft--;
-    updateTimerDisplay();
-
-    if (timeLeft <= 0) {
-      clearInterval(timerInterval);
-      unlockManifesto();
-    }
+    timeLeft--; updateTimerDisplay();
+    if (timeLeft <= 0) { clearInterval(timerInterval); unlockManifesto(); }
   }, 1000);
 
   function updateTimerDisplay() {
-    const minutes = Math.floor(timeLeft / 60);
-    const seconds = timeLeft % 60;
+    const minutes = Math.floor(timeLeft / 60); const seconds = timeLeft % 60;
     const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     if (timerDisplay) timerDisplay.textContent = `(${formattedTime})`;
     if (largeTimerDisplay) largeTimerDisplay.textContent = formattedTime;
@@ -1001,19 +793,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function unlockManifesto() {
     if (timerDisplay) timerDisplay.textContent = '';
-    if (largeTimerDisplay) {
-      largeTimerDisplay.textContent = '00:00';
-      largeTimerDisplay.style.color = 'var(--primary)';
-    }
-
+    if (largeTimerDisplay) { largeTimerDisplay.textContent = '00:00'; largeTimerDisplay.style.color = 'var(--primary)'; }
     if (agreeBtn) {
-      agreeBtn.textContent = 'I UNDERSTAND AND AGREE';
-      agreeBtn.disabled = false;
-      agreeBtn.classList.remove('disabled-btn');
-      
-      agreeBtn.addEventListener('click', () => {
-        document.getElementById('manifesto-overlay').classList.add('hidden');
-      });
+      agreeBtn.textContent = 'I UNDERSTAND AND AGREE'; agreeBtn.disabled = false; agreeBtn.classList.remove('disabled-btn');
+      agreeBtn.addEventListener('click', () => { document.getElementById('manifesto-overlay').classList.add('hidden'); });
     }
   }
 });

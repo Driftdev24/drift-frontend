@@ -33,13 +33,17 @@ let sourceNode = null;
 
 let confirmCallback = null;
 
-// --- NEW: File Transfer Queue Engine ---
+// File Transfer Queue Engine
 const CHUNK_SIZE = 65536; 
 const incomingFiles = {};
 let activeSendAborts = new Map();
 let fileUploadQueue = [];
 let isUploading = false;
-// ---------------------------------------
+
+// Heartbeat Monitor Engine
+let lastHeartbeat = Date.now();
+let connectionMonitorInterval = null;
+let iceRestartTimeout = null;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -186,7 +190,14 @@ async function handleCreate(e) {
     socket.emit('create-room', { password: serverSafePassword }, (res) => {
       if (res.success) {
         isCreator = true; currentRoomId = res.id;
-        rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
+        
+        rtcConfig = { 
+          iceServers: res.iceServers, 
+          iceCandidatePoolSize: 10,
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
+        };
+        
         document.getElementById('lobby-view').classList.add('hidden');
         document.getElementById('success-view').classList.remove('hidden');
         document.getElementById('disp-id').innerText = currentRoomId;
@@ -218,7 +229,13 @@ async function handleJoin(e) {
 
     socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
       if (res.success) {
-        isCreator = false; rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
+        isCreator = false; 
+        rtcConfig = { 
+          iceServers: res.iceServers, 
+          iceCandidatePoolSize: 10,
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
+        };
         if (!peerConnection) setupWebRTC(); 
         openChatInterface();
         displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
@@ -239,7 +256,7 @@ function openChatInterface() {
 }
 
 // ==========================================
-// WEBRTC & BINARY DATA CHANNEL
+// ADVANCED WEBRTC & BINARY DATA CHANNEL
 // ==========================================
 function setupWebRTC() {
   try {
@@ -250,12 +267,25 @@ function setupWebRTC() {
       if (event.candidate) socket.emit('webrtc-ice', event.candidate);
     };
 
+    // ADVANCED: ICE-Restart Auto-Recovery System
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
-      if (state === 'failed') {
-        displaySystemMessage('[ERROR] Network firewall blocked connection. The TURN server may be unreachable.', 'danger');
-      } else if (state === 'disconnected') {
-        displaySystemMessage('[WARNING] Peer disconnected or network lost.', 'danger');
+      if (state === 'failed' || state === 'disconnected') {
+        if (iceRestartTimeout) clearTimeout(iceRestartTimeout);
+        
+        displaySystemMessage('[WARNING] Network route disrupted. Attempting advanced ICE Restart bypass...', 'danger');
+        
+        if (isCreator) {
+          iceRestartTimeout = setTimeout(async () => {
+            try {
+              const offer = await peerConnection.createOffer({ iceRestart: true });
+              await peerConnection.setLocalDescription(offer);
+              socket.emit('webrtc-offer', offer);
+            } catch (e) {
+              displaySystemMessage('[ERROR] ICE Restart failed. Connection permanently lost.', 'danger');
+            }
+          }, 1500); // Small delay prevents restart spamming
+        }
       }
     };
 
@@ -265,32 +295,66 @@ function setupWebRTC() {
       }
     };
 
-    if (isCreator) {
-      dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true });
-      setupDataChannel();
-    } else {
-      peerConnection.ondatachannel = (event) => { dataChannel = event.channel; setupDataChannel(); };
-    }
+    // ADVANCED: Pre-Negotiated Channels (Instant Connect, Zero Handshake Wait)
+    dataChannel = peerConnection.createDataChannel('drift-chat', { 
+      negotiated: true, 
+      id: 0, 
+      ordered: true 
+    });
+    setupDataChannel();
+
   } catch (err) { displaySystemMessage(`[ERROR] WebRTC Init Failed: ${err.message}`, 'danger'); }
 }
 
 async function flushChatIceCandidates() {
   while (pendingChatIce.length > 0) {
     const candidate = pendingChatIce.shift();
-    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
+    try { 
+      if (candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); 
+    } catch (e) {}
   }
+}
+
+// P2P Heartbeat Monitor to catch ghost disconnects
+function startHeartbeatMonitor() {
+  lastHeartbeat = Date.now();
+  if (connectionMonitorInterval) clearInterval(connectionMonitorInterval);
+  connectionMonitorInterval = setInterval(() => {
+    if (dataChannel && dataChannel.readyState === 'open') {
+      if (Date.now() - lastHeartbeat > 20000) {
+        displaySystemMessage('[ERROR] P2P Tunnel Lost (No response from peer). Closing secure channel.', 'danger');
+        setTimeout(() => {
+          const alertModal = document.getElementById('purge-alert'); 
+          alertModal.classList.remove('hidden');
+          performLocalPurge(); 
+          setTimeout(() => alertModal.classList.add('hidden'), 3500);
+        }, 1000);
+      }
+    }
+  }, 5000);
 }
 
 function setupDataChannel() {
   dataChannel.binaryType = 'arraybuffer';
   dataChannel.bufferedAmountLowThreshold = 256 * 1024; 
 
-  dataChannel.onopen = () => displaySystemMessage('Secure binary tunnel ready.', 'success');
-  dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
+  dataChannel.onopen = () => {
+    displaySystemMessage('Secure binary tunnel ready.', 'success');
+    startHeartbeatMonitor(); 
+  };
+  
+  dataChannel.onclose = () => {
+    displaySystemMessage('Connection closed intentionally or peer left.', 'danger');
+    const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
+    performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500);
+  };
+  
   dataChannel.onerror = () => displaySystemMessage('[ERROR] Data channel error.', 'danger');
   
   dataChannel.onmessage = async (event) => {
     try {
+      lastHeartbeat = Date.now(); 
+
       if (event.data instanceof ArrayBuffer) { await handleIncomingBinaryChunk(event.data); return; }
 
       let payload; const parsed = JSON.parse(event.data);
@@ -301,7 +365,7 @@ function setupDataChannel() {
         payload = JSON.parse(textDecoder.decode(decrypted));
       } else { payload = parsed; }
 
-      if (payload.type === 'obfuscation') return;
+      if (payload.type === 'obfuscation') return; 
       if (payload.type === 'file_start') handleRemoteFileStart(payload);
       else if (payload.type === 'file_end') handleRemoteFileEnd(payload);
       else renderMessage(payload, false);
@@ -312,7 +376,6 @@ function setupDataChannel() {
 // ==========================================
 // HIGH-PERFORMANCE QUEUED FILE HANDLING
 // ==========================================
-
 function enqueueFile(file) {
   fileUploadQueue.push(file);
   if (!isUploading) processFileUploadQueue();
@@ -337,7 +400,7 @@ async function sendFileStream(file) {
 
       const budget = await calculateStorageBudget();
       if (file.size > budget) {
-        displaySystemMessage(`[SECURITY] File (${formatBytes(file.size)}) exceeds device safety limit (${formatBytes(budget)}).`, 'danger');
+        displaySystemMessage(`[SECURITY] File (${formatBytes(file.size)}) exceeds device limit (${formatBytes(budget)}).`, 'danger');
         return resolveTransfer();
       }
 
@@ -360,7 +423,13 @@ async function sendFileStream(file) {
             }
 
             if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
-              await new Promise(r => { dataChannel.onbufferedamountlow = () => { dataChannel.onbufferedamountlow = null; r(); }; });
+              await new Promise(r => { 
+                const bufferListener = () => {
+                  dataChannel.removeEventListener('bufferedamountlow', bufferListener);
+                  r();
+                };
+                dataChannel.addEventListener('bufferedamountlow', bufferListener);
+              });
             }
 
             const rawChunk = await file.slice(currentChunk * CHUNK_SIZE, Math.min((currentChunk + 1) * CHUNK_SIZE, file.size)).arrayBuffer();
@@ -375,8 +444,8 @@ async function sendFileStream(file) {
             dataChannel.send(packet.buffer);
             currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
 
-            // --- YIELD THREAD: Keeps UI buttery smooth ---
-            if (currentChunk % 4 === 0) await new Promise(r => setTimeout(r, 2));
+            // Yield thread for buttery UI performance during massive queues
+            if (currentChunk % 10 === 0) await new Promise(r => setTimeout(r, 2));
           }
 
           await sendEncryptedPayload({ type: 'file_end', fileId: fileIdStr });
@@ -417,8 +486,7 @@ async function handleIncomingBinaryChunk(buffer) {
     session.receivedChunks++;
     updateTransferProgress(fileIdStr, session.receivedChunks, session.totalChunks);
 
-    // --- YIELD THREAD ON RECEIVE ---
-    if (session.receivedChunks % 4 === 0) await new Promise(r => setTimeout(r, 2));
+    if (session.receivedChunks % 10 === 0) await new Promise(r => setTimeout(r, 2));
   } catch (err) {}
 }
 
@@ -643,6 +711,8 @@ function displaySystemMessage(text, type = 'normal') {
 
 function performLocalPurge() {
   try {
+    if (connectionMonitorInterval) clearInterval(connectionMonitorInterval);
+    if (iceRestartTimeout) clearTimeout(iceRestartTimeout);
     if (peerConnection) { peerConnection.close(); peerConnection = null; }
     if (callConnection) { callConnection.close(); callConnection = null; }
     if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }
@@ -660,31 +730,38 @@ function performLocalPurge() {
 
 function requestPurge() {
   showConfirm("Are you sure you want to leave and destroy the chat?", () => {
-    socket.emit('shred-room'); const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
+    socket.emit('shred-room'); 
+    const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
     performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
   });
 }
+
 socket.on('room-shredded', () => {
   const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
   performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
 });
 
+// Periodic Heartbeat & Obfuscation Signal
 setInterval(() => {
   if (dataChannel && dataChannel.readyState === 'open') {
     try {
-      const randomSize = Math.floor(Math.random() * 128) + 16;
+      const randomSize = Math.floor(Math.random() * 64) + 16;
       const garbage = new Uint8Array(randomSize); crypto.getRandomValues(garbage);
       sendEncryptedPayload({ type: 'obfuscation', data: Array.from(garbage) });
     } catch (e) {}
   }
-}, Math.random() * 4000 + 2000);
+}, Math.random() * 3000 + 3000); 
 
+// ==========================================
+// ADVANCED SIGNALING RELAYS & SYNC
+// ==========================================
 socket.on('peer-joined', async () => {
   displaySystemMessage('[SYSTEM] Peer detected. Exchanging coordinates...', 'normal');
   if (isCreator) {
     try {
       if (!peerConnection) setupWebRTC();
-      const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer);
+      const offer = await peerConnection.createOffer(); 
+      await peerConnection.setLocalDescription(offer);
       socket.emit('webrtc-offer', offer);
     } catch (err) { displaySystemMessage(`[ERROR] Offer creation failed.`, 'danger'); }
   }
@@ -695,9 +772,12 @@ socket.on('webrtc-offer', async (offer) => {
     try {
       if (!peerConnection) setupWebRTC();
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
-      socket.emit('webrtc-answer', answer);
+      // ADVANCED: Flush ICE exactly when Remote Description becomes available
       await flushChatIceCandidates();
+      
+      const answer = await peerConnection.createAnswer(); 
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('webrtc-answer', answer);
     } catch (err) { displaySystemMessage(`[ERROR] Processing offer failed.`, 'danger'); }
   }
 });
@@ -706,6 +786,7 @@ socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      // ADVANCED: Flush ICE exactly when Remote Description becomes available
       await flushChatIceCandidates();
     } catch (err) { displaySystemMessage(`[ERROR] Processing answer failed.`, 'danger'); }
   }
@@ -715,7 +796,10 @@ socket.on('webrtc-ice', async (candidate) => {
   try {
     if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
       await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } else { pendingChatIce.push(candidate); }
+    } else { 
+      // Safely queue if the Remote Description is not yet set
+      pendingChatIce.push(candidate); 
+    }
   } catch (err) {}
 });
 

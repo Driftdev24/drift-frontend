@@ -33,10 +33,13 @@ let sourceNode = null;
 
 let confirmCallback = null;
 
-// File Transfer Engine State
+// --- NEW: File Transfer Queue Engine ---
 const CHUNK_SIZE = 65536; 
 const incomingFiles = {};
 let activeSendAborts = new Map();
+let fileUploadQueue = [];
+let isUploading = false;
+// ---------------------------------------
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -60,9 +63,7 @@ async function calculateStorageBudget() {
     } else if (navigator.deviceMemory) {
       safeLimit = Math.floor(navigator.deviceMemory * 256 * 1024 * 1024);
     }
-  } catch (err) {
-    console.warn("Storage estimate unreadable:", err);
-  }
+  } catch (err) {}
   return Math.max(50 * 1024 * 1024, Math.min(safeLimit, 4 * 1024 * 1024 * 1024));
 }
 
@@ -78,9 +79,7 @@ async function refreshDynamicQuotaDisplay() {
     const budget = await calculateStorageBudget();
     const label = document.getElementById('storage-budget-display');
     if (label) label.textContent = `DEVICE LIMIT: ~${formatBytes(budget)}`;
-  } catch (err) {
-    console.error("Quota display error:", err);
-  }
+  } catch (err) {}
 }
 
 // ==========================================
@@ -99,28 +98,19 @@ async function setupE2EEKey(password) {
 }
 
 async function hashPasswordForServer(password) {
-  try {
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password + "drift_server_salt"));
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
-  } catch (err) {
-    displaySystemMessage('[ERROR] Failed to securely hash room credentials.', 'danger');
-    throw err;
-  }
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password + "drift_server_salt"));
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
 }
 
 function bufferToBase64(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 8192) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-  }
+  const bytes = new Uint8Array(buf); let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
   return window.btoa(bin);
 }
 
 function base64ToBuffer(base64) {
-  const bin = window.atob(base64);
-  const bytes = new Uint8Array(bin.length);
+  const bin = window.atob(base64); const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
 }
@@ -133,15 +123,9 @@ async function sendEncryptedPayload(payloadObj) {
   try {
     const plainText = JSON.stringify(payloadObj);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const ciphertext = await window.crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv },
-      e2eeKey,
-      textEncoder.encode(plainText)
-    );
+    const ciphertext = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, e2eeKey, textEncoder.encode(plainText));
     dataChannel.send(JSON.stringify({ e2ee: true, iv: bufferToBase64(iv), ct: bufferToBase64(ciphertext) }));
-  } catch (e) {
-    displaySystemMessage('[ERROR] Payload encryption failed.', 'danger');
-  }
+  } catch (e) { displaySystemMessage('[ERROR] Payload encryption failed.', 'danger'); }
 }
 
 // ==========================================
@@ -158,17 +142,12 @@ function switchTab(tab) {
 function universalCopy(text) {
   try {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
+    const textArea = document.createElement('textarea'); textArea.value = text;
     textArea.style.position = 'fixed'; textArea.style.left = '-999999px';
-    document.body.appendChild(textArea);
-    textArea.focus(); textArea.select();
-    document.execCommand('copy');
-    textArea.remove();
+    document.body.appendChild(textArea); textArea.focus(); textArea.select();
+    document.execCommand('copy'); textArea.remove();
     return Promise.resolve();
-  } catch (err) {
-    return Promise.reject(err);
-  }
+  } catch (err) { return Promise.reject(err); }
 }
 
 function copyData(elementId, btn) {
@@ -179,8 +158,7 @@ function copyData(elementId, btn) {
 
 function quickCopyText(textElementId, iconContainerId) {
   universalCopy(document.getElementById(textElementId).innerText).then(() => {
-    const iconNode = document.getElementById(iconContainerId);
-    const originalHTML = iconNode.innerHTML;
+    const iconNode = document.getElementById(iconContainerId); const originalHTML = iconNode.innerHTML;
     iconNode.innerHTML = `<span style="color:var(--primary); font-size: 0.75rem; font-weight: bold;">COPIED!</span>`;
     setTimeout(() => { iconNode.innerHTML = originalHTML; }, 1500);
   });
@@ -188,8 +166,7 @@ function quickCopyText(textElementId, iconContainerId) {
 
 function showConfirm(message, callback) {
   document.getElementById('confirm-message').textContent = message;
-  document.getElementById('confirm-modal').classList.remove('hidden');
-  confirmCallback = callback;
+  document.getElementById('confirm-modal').classList.remove('hidden'); confirmCallback = callback;
 }
 function executeConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); if (confirmCallback) confirmCallback(); }
 function cancelConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); confirmCallback = null; }
@@ -212,7 +189,6 @@ async function handleCreate(e) {
         rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
         document.getElementById('lobby-view').classList.add('hidden');
         document.getElementById('success-view').classList.remove('hidden');
-        
         document.getElementById('disp-id').innerText = currentRoomId;
         document.getElementById('disp-pass').innerText = currentPassword; 
         
@@ -225,14 +201,11 @@ async function handleCreate(e) {
         document.getElementById('error-message').textContent = '[ERROR] Server failed to create room.';
       }
     });
-  } catch (err) {
-    document.getElementById('error-message').textContent = 'Error during creation: ' + err.message;
-  }
+  } catch (err) { document.getElementById('error-message').textContent = 'Error during creation: ' + err.message; }
 }
 
 function enterGeneratedRoom() {
-  openChatInterface();
-  displaySystemMessage('Waiting for your peer to join...');
+  openChatInterface(); displaySystemMessage('Waiting for your peer to join...');
 }
 
 async function handleJoin(e) {
@@ -253,9 +226,7 @@ async function handleJoin(e) {
         document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
       }
     });
-  } catch (err) {
-    document.getElementById('error-message').textContent = 'Error joining: ' + err.message;
-  }
+  } catch (err) { document.getElementById('error-message').textContent = 'Error joining: ' + err.message; }
 }
 
 function openChatInterface() {
@@ -282,17 +253,15 @@ function setupWebRTC() {
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
       if (state === 'failed') {
-        displaySystemMessage('[ERROR] Network firewall blocked direct connection. You or your peer may be on a strict network (Symmetric NAT) and the TURN server is unavailable.', 'danger');
+        displaySystemMessage('[ERROR] Network firewall blocked connection. The TURN server may be unreachable.', 'danger');
       } else if (state === 'disconnected') {
-        displaySystemMessage('[WARNING] Peer disconnected or network connection lost.', 'danger');
+        displaySystemMessage('[WARNING] Peer disconnected or network lost.', 'danger');
       }
     };
 
     peerConnection.onconnectionstatechange = () => {
       if (peerConnection.connectionState === 'connected') {
         displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active. You can now chat securely.', 'success');
-      } else if (peerConnection.connectionState === 'failed') {
-        displaySystemMessage('[ERROR] P2P tunnel failed to establish.', 'danger');
       }
     };
 
@@ -300,120 +269,131 @@ function setupWebRTC() {
       dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true });
       setupDataChannel();
     } else {
-      peerConnection.ondatachannel = (event) => {
-        dataChannel = event.channel;
-        setupDataChannel();
-      };
+      peerConnection.ondatachannel = (event) => { dataChannel = event.channel; setupDataChannel(); };
     }
-  } catch (err) {
-    displaySystemMessage(`[ERROR] WebRTC Initialization Failed: ${err.message}`, 'danger');
+  } catch (err) { displaySystemMessage(`[ERROR] WebRTC Init Failed: ${err.message}`, 'danger'); }
+}
+
+async function flushChatIceCandidates() {
+  while (pendingChatIce.length > 0) {
+    const candidate = pendingChatIce.shift();
+    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
   }
 }
 
 function setupDataChannel() {
-  try {
-    dataChannel.binaryType = 'arraybuffer';
-    dataChannel.bufferedAmountLowThreshold = 256 * 1024; 
+  dataChannel.binaryType = 'arraybuffer';
+  dataChannel.bufferedAmountLowThreshold = 256 * 1024; 
 
-    dataChannel.onopen = () => displaySystemMessage('Secure binary tunnel ready.', 'success');
-    dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
-    dataChannel.onerror = (error) => displaySystemMessage('[ERROR] Data channel error occurred.', 'danger');
-    
-    dataChannel.onmessage = async (event) => {
-      try {
-        if (event.data instanceof ArrayBuffer) {
-          await handleIncomingBinaryChunk(event.data);
-          return;
-        }
+  dataChannel.onopen = () => displaySystemMessage('Secure binary tunnel ready.', 'success');
+  dataChannel.onclose = () => displaySystemMessage('Connection lost.', 'danger');
+  dataChannel.onerror = () => displaySystemMessage('[ERROR] Data channel error.', 'danger');
+  
+  dataChannel.onmessage = async (event) => {
+    try {
+      if (event.data instanceof ArrayBuffer) { await handleIncomingBinaryChunk(event.data); return; }
 
-        let payload;
-        const parsed = JSON.parse(event.data);
-        if (parsed.e2ee) {
-          const decrypted = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.iv)) },
-            e2eeKey,
-            base64ToBuffer(parsed.ct)
-          );
-          payload = JSON.parse(textDecoder.decode(decrypted));
-        } else { payload = parsed; }
+      let payload; const parsed = JSON.parse(event.data);
+      if (parsed.e2ee) {
+        const decrypted = await window.crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.iv)) }, e2eeKey, base64ToBuffer(parsed.ct)
+        );
+        payload = JSON.parse(textDecoder.decode(decrypted));
+      } else { payload = parsed; }
 
-        if (payload.type === 'obfuscation') return;
-        if (payload.type === 'file_start') handleRemoteFileStart(payload);
-        else if (payload.type === 'file_end') handleRemoteFileEnd(payload);
-        else renderMessage(payload, false);
-      } catch (err) {
-        console.error("Message parsing failed:", err);
-      }
-    };
-  } catch (err) {
-    displaySystemMessage(`[ERROR] Data Channel Setup Failed: ${err.message}`, 'danger');
-  }
+      if (payload.type === 'obfuscation') return;
+      if (payload.type === 'file_start') handleRemoteFileStart(payload);
+      else if (payload.type === 'file_end') handleRemoteFileEnd(payload);
+      else renderMessage(payload, false);
+    } catch (err) {}
+  };
 }
 
 // ==========================================
-// HIGH-PERFORMANCE STREAMED FILE HANDLING
+// HIGH-PERFORMANCE QUEUED FILE HANDLING
 // ==========================================
-async function sendFileStream(file) {
-  try {
-    if (!dataChannel || dataChannel.readyState !== 'open') {
-      displaySystemMessage('[ERROR] Cannot send file. Connection is not fully active.', 'danger');
-      return;
-    }
 
-    const budget = await calculateStorageBudget();
-    if (file.size > budget) {
-      displaySystemMessage(`[SECURITY] File (${formatBytes(file.size)}) exceeds device safety limit (${formatBytes(budget)}).`, 'danger');
-      return;
-    }
+function enqueueFile(file) {
+  fileUploadQueue.push(file);
+  if (!isUploading) processFileUploadQueue();
+}
 
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const fileToken = Math.floor(Math.random() * 2147483647);
-    const fileIdStr = fileToken.toString();
-
-    await sendEncryptedPayload({
-      type: 'file_start', fileId: fileIdStr, fileName: file.name, fileSize: file.size, mime: file.type || 'application/octet-stream', totalChunks: totalChunks
-    });
-
-    renderTransferProgress(fileIdStr, file.name, file.size, true);
-    let currentChunk = 0; activeSendAborts.set(fileIdStr, false);
-
-    async function pushStream() {
-      try {
-        while (currentChunk < totalChunks) {
-          if (activeSendAborts.get(fileIdStr) || !dataChannel || dataChannel.readyState !== 'open') {
-            removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr); return;
-          }
-
-          if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
-            await new Promise(resolve => {
-              dataChannel.onbufferedamountlow = () => { dataChannel.onbufferedamountlow = null; resolve(); };
-            });
-          }
-
-          const rawChunk = await file.slice(currentChunk * CHUNK_SIZE, Math.min((currentChunk + 1) * CHUNK_SIZE, file.size)).arrayBuffer();
-          const iv = window.crypto.getRandomValues(new Uint8Array(12));
-          const encryptedData = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, e2eeKey, rawChunk);
-          
-          const packet = new Uint8Array(20 + encryptedData.byteLength);
-          const view = new DataView(packet.buffer);
-          view.setUint32(0, fileToken); view.setUint32(4, currentChunk);
-          packet.set(iv, 8); packet.set(new Uint8Array(encryptedData), 20);
-
-          dataChannel.send(packet.buffer);
-          currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
-        }
-
-        await sendEncryptedPayload({ type: 'file_end', fileId: fileIdStr });
-        removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr);
-        renderCompletedFileCard({ name: file.name, size: file.size, mime: file.type }, null, true);
-      } catch (err) {
-        displaySystemMessage(`[ERROR] File transmission interrupted: ${err.message}`, 'danger');
-      }
-    }
-    pushStream();
-  } catch (err) {
-    displaySystemMessage(`[ERROR] Failed to initiate file transfer: ${err.message}`, 'danger');
+async function processFileUploadQueue() {
+  isUploading = true;
+  while (fileUploadQueue.length > 0) {
+    const file = fileUploadQueue.shift();
+    await sendFileStream(file);
   }
+  isUploading = false;
+}
+
+async function sendFileStream(file) {
+  return new Promise(async (resolveTransfer) => {
+    try {
+      if (!dataChannel || dataChannel.readyState !== 'open') {
+        displaySystemMessage('[ERROR] Cannot send file. Connection not active.', 'danger');
+        return resolveTransfer();
+      }
+
+      const budget = await calculateStorageBudget();
+      if (file.size > budget) {
+        displaySystemMessage(`[SECURITY] File (${formatBytes(file.size)}) exceeds device safety limit (${formatBytes(budget)}).`, 'danger');
+        return resolveTransfer();
+      }
+
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const fileToken = Math.floor(Math.random() * 2147483647);
+      const fileIdStr = fileToken.toString();
+
+      await sendEncryptedPayload({
+        type: 'file_start', fileId: fileIdStr, fileName: file.name, fileSize: file.size, mime: file.type || 'application/octet-stream', totalChunks: totalChunks
+      });
+
+      renderTransferProgress(fileIdStr, file.name, file.size, true);
+      let currentChunk = 0; activeSendAborts.set(fileIdStr, false);
+
+      async function pushStream() {
+        try {
+          while (currentChunk < totalChunks) {
+            if (activeSendAborts.get(fileIdStr) || !dataChannel || dataChannel.readyState !== 'open') {
+              removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr); return resolveTransfer();
+            }
+
+            if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
+              await new Promise(r => { dataChannel.onbufferedamountlow = () => { dataChannel.onbufferedamountlow = null; r(); }; });
+            }
+
+            const rawChunk = await file.slice(currentChunk * CHUNK_SIZE, Math.min((currentChunk + 1) * CHUNK_SIZE, file.size)).arrayBuffer();
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const encryptedData = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, e2eeKey, rawChunk);
+            
+            const packet = new Uint8Array(20 + encryptedData.byteLength);
+            const view = new DataView(packet.buffer);
+            view.setUint32(0, fileToken); view.setUint32(4, currentChunk);
+            packet.set(iv, 8); packet.set(new Uint8Array(encryptedData), 20);
+
+            dataChannel.send(packet.buffer);
+            currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
+
+            // --- YIELD THREAD: Keeps UI buttery smooth ---
+            if (currentChunk % 4 === 0) await new Promise(r => setTimeout(r, 2));
+          }
+
+          await sendEncryptedPayload({ type: 'file_end', fileId: fileIdStr });
+          removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr);
+          renderCompletedFileCard({ name: file.name, size: file.size, mime: file.type }, null, true);
+          resolveTransfer();
+        } catch (err) {
+          displaySystemMessage(`[ERROR] File transmission interrupted.`, 'danger');
+          resolveTransfer();
+        }
+      }
+      pushStream();
+    } catch (err) {
+      displaySystemMessage(`[ERROR] Failed to initiate file transfer.`, 'danger');
+      resolveTransfer();
+    }
+  });
 }
 
 function handleRemoteFileStart(meta) {
@@ -431,31 +411,25 @@ async function handleIncomingBinaryChunk(buffer) {
     const session = incomingFiles[fileIdStr];
     if (!session) return;
 
-    const decryptedChunk = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(buffer, 8, 12) },
-      e2eeKey,
-      new Uint8Array(buffer, 20)
-    );
+    const decryptedChunk = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(buffer, 8, 12) }, e2eeKey, new Uint8Array(buffer, 20));
 
     session.chunks[view.getUint32(4)] = decryptedChunk;
     session.receivedChunks++;
     updateTransferProgress(fileIdStr, session.receivedChunks, session.totalChunks);
-  } catch (err) {
-    console.error("Corrupt binary chunk dropped", err);
-  }
+
+    // --- YIELD THREAD ON RECEIVE ---
+    if (session.receivedChunks % 4 === 0) await new Promise(r => setTimeout(r, 2));
+  } catch (err) {}
 }
 
 function handleRemoteFileEnd(payload) {
   try {
-    const session = incomingFiles[payload.fileId];
-    if (!session) return;
+    const session = incomingFiles[payload.fileId]; if (!session) return;
     removeTransferProgress(payload.fileId);
     const fileBlob = new Blob(session.chunks, { type: session.mime || 'application/octet-stream' });
     delete incomingFiles[payload.fileId]; 
     renderCompletedFileCard({ name: session.name, size: session.size, mime: session.mime }, URL.createObjectURL(fileBlob), false);
-  } catch (err) {
-    displaySystemMessage(`[ERROR] Failed to finalize received file: ${err.message}`, 'danger');
-  }
+  } catch (err) { displaySystemMessage(`[ERROR] Failed to compile received file.`, 'danger'); }
 }
 
 // ==========================================
@@ -464,8 +438,7 @@ function handleRemoteFileEnd(payload) {
 function renderTransferProgress(id, name, size, isUploading) {
   const container = document.getElementById('messages-container');
   const progressBox = document.createElement('div');
-  progressBox.className = `msg system file-progress-card`;
-  progressBox.id = `transfer-${id}`;
+  progressBox.className = `msg system file-progress-card`; progressBox.id = `transfer-${id}`;
   progressBox.innerHTML = `
     <div class="progress-info"><span class="file-name">${name}</span><span class="file-action">${isUploading ? 'UPLOADING' : 'RECEIVING'} (${formatBytes(size)})</span></div>
     <div class="progress-track"><div class="progress-fill" id="bar-${id}" style="width: 0%;"></div></div>
@@ -501,7 +474,6 @@ function renderCompletedFileCard(fileInfo, blobUrl, isMe) {
     const sentBadge = document.createElement('span'); sentBadge.className = 'sent-badge'; sentBadge.textContent = 'SENT SUCCESSFULLY';
     fileDetail.appendChild(sentBadge);
   }
-
   msgEl.appendChild(fileDetail); container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
 
@@ -515,18 +487,22 @@ async function handleSendText() {
     const payload = { type: 'text', data: text };
     await sendEncryptedPayload(payload);
     renderMessage(payload, true); input.value = '';
-  } catch(e) { displaySystemMessage('[ERROR] Failed to send encrypted message.', 'danger'); }
+  } catch(e) { displaySystemMessage('[ERROR] Failed to send text.', 'danger'); }
 }
 
 function handleFileSelect(event) {
   try {
-    const file = event.target.files[0]; if (!file) return;
-    showConfirm(`Send ${file.name} (${formatBytes(file.size)})?`, () => { sendFileStream(file); event.target.value = ''; });
-  } catch (err) { displaySystemMessage(`[ERROR] File selection failed: ${err.message}`, 'danger'); }
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
+    showConfirm(`Send ${files.length} file(s)?`, () => { 
+      files.forEach(file => enqueueFile(file)); 
+      event.target.value = ''; 
+    });
+  } catch (err) { displaySystemMessage(`[ERROR] File selection failed.`, 'danger'); }
 }
 
 async function toggleMic() {
-  if (!dataChannel || dataChannel.readyState !== 'open') { displaySystemMessage('[ERROR] Connection is not ready for audio.', 'danger'); return; }
+  if (!dataChannel || dataChannel.readyState !== 'open') { displaySystemMessage('[ERROR] Connection not ready.', 'danger'); return; }
   try {
     if (!isRecording) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -536,36 +512,31 @@ async function toggleMic() {
       mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunks, { type: selectedMimeType || 'audio/mp4' });
-        sendFileStream(new File([audioBlob], `voice_${Date.now()}.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`, { type: audioBlob.type }));
+        enqueueFile(new File([audioBlob], `voice_${Date.now()}.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`, { type: audioBlob.type }));
         stream.getTracks().forEach(track => track.stop());
       };
       mediaRecorder.start(); isRecording = true; document.getElementById('mic-btn').classList.add('recording');
     } else {
       mediaRecorder.stop(); isRecording = false; document.getElementById('mic-btn').classList.remove('recording');
     }
-  } catch (err) { displaySystemMessage(`[ERROR] Microphone access denied or unavailable: ${err.message}`, 'danger'); }
+  } catch (err) { displaySystemMessage(`[ERROR] Mic denied.`, 'danger'); }
 }
 
 function requestCall() {
-  try {
-    if (isCallActive) return;
-    amICaller = true; socket.emit('call-request', { isVideo: false });
-    displaySystemMessage(`Dialing peer for Voice Call...`);
-  } catch (err) { displaySystemMessage(`[ERROR] Call request failed: ${err.message}`, 'danger'); }
+  if (isCallActive) return; amICaller = true; socket.emit('call-request', { isVideo: false });
+  displaySystemMessage(`Dialing peer for Voice Call...`);
 }
 
 socket.on('call-request', () => {
   if (isCallActive) return socket.emit('call-response', { accepted: false, reason: 'Busy' });
-  amICaller = false;
-  document.getElementById('incoming-call-type').textContent = `Incoming Voice Call`;
+  amICaller = false; document.getElementById('incoming-call-type').textContent = `Incoming Voice Call`;
   document.getElementById('incoming-call-modal').classList.remove('hidden');
 });
 
 async function acceptCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  displaySystemMessage('[SYSTEM] Connecting voice hardware...', 'normal');
+  document.getElementById('incoming-call-modal').classList.add('hidden'); displaySystemMessage('[SYSTEM] Connecting voice hardware...', 'normal');
   try { await startCallEngine(); socket.emit('call-response', { accepted: true }); }
-  catch (err) { displaySystemMessage(`[ERROR] Failed to accept call: ${err.message}`, 'danger'); }
+  catch (err) { displaySystemMessage(`[ERROR] Call start failed.`, 'danger'); }
 }
 
 function rejectCall() { document.getElementById('incoming-call-modal').classList.add('hidden'); socket.emit('call-response', { accepted: false }); }
@@ -573,7 +544,7 @@ function rejectCall() { document.getElementById('incoming-call-modal').classList
 socket.on('call-response', async (data) => {
   if (data.accepted) {
     displaySystemMessage('Call accepted. Connecting...', 'success');
-    try { await startCallEngine(); } catch (err) { displaySystemMessage(`[ERROR] Engine failure: ${err.message}`, 'danger'); }
+    try { await startCallEngine(); } catch (err) {}
   } else {
     displaySystemMessage(`Call declined${data.reason ? ' (' + data.reason + ')' : ''}.`, 'danger'); amICaller = false;
   }
@@ -593,18 +564,13 @@ async function startCallEngine() {
         setupAudioAmplifier(event.streams[0]); remoteAudio.play().catch(() => {});
       }
     };
-
     callStream.getTracks().forEach(track => { callConnection.addTrack(track, callStream); });
 
     if (amICaller) {
-      const offer = await callConnection.createOffer();
-      await callConnection.setLocalDescription(offer);
+      const offer = await callConnection.createOffer(); await callConnection.setLocalDescription(offer);
       socket.emit('call-offer', offer);
     }
-  } catch (err) {
-    displaySystemMessage(`[CALL ERROR] Hardware setup failed: ${err.message}`, 'danger');
-    endCall();
-  }
+  } catch (err) { displaySystemMessage(`[CALL ERROR] Mic setup failed.`, 'danger'); endCall(); }
 }
 
 socket.on('call-offer', async (offer) => {
@@ -612,10 +578,9 @@ socket.on('call-offer', async (offer) => {
   try {
     await callConnection.setRemoteDescription(new RTCSessionDescription(offer));
     while (pendingCallIce.length) { callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {}); }
-    const answer = await callConnection.createAnswer();
-    await callConnection.setLocalDescription(answer);
+    const answer = await callConnection.createAnswer(); await callConnection.setLocalDescription(answer);
     socket.emit('call-answer', answer);
-  } catch (err) { displaySystemMessage(`[ERROR] Call negotiation failed: ${err.message}`, 'danger'); }
+  } catch (err) {}
 });
 
 socket.on('call-answer', async (answer) => {
@@ -623,7 +588,7 @@ socket.on('call-answer', async (answer) => {
   try {
     await callConnection.setRemoteDescription(new RTCSessionDescription(answer));
     while (pendingCallIce.length) { callConnection.addIceCandidate(new RTCIceCandidate(pendingCallIce.shift())).catch(() => {}); }
-  } catch (err) { displaySystemMessage(`[ERROR] Call response failed: ${err.message}`, 'danger'); }
+  } catch (err) {}
 });
 
 socket.on('call-ice', async (candidate) => {
@@ -633,11 +598,8 @@ socket.on('call-ice', async (candidate) => {
 });
 
 function toggleCallMic() {
-  try {
-    if (!callStream) return;
-    const audioTrack = callStream.getAudioTracks()[0];
-    if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)'; }
-  } catch (err) { console.error("Mic toggle failed", err); }
+  if (!callStream) return; const audioTrack = callStream.getAudioTracks()[0];
+  if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; document.getElementById('toggle-call-mic-btn').style.color = audioTrack.enabled ? 'inherit' : 'var(--danger)'; }
 }
 
 function setupAudioAmplifier(stream) {
@@ -645,36 +607,26 @@ function setupAudioAmplifier(stream) {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     if (sourceNode) sourceNode.disconnect(); if (gainNode) gainNode.disconnect();
-    
-    sourceNode = audioCtx.createMediaStreamSource(stream);
-    gainNode = audioCtx.createGain();
+    sourceNode = audioCtx.createMediaStreamSource(stream); gainNode = audioCtx.createGain();
     const slider = document.getElementById('volume-slider'); gainNode.gain.value = slider ? parseFloat(slider.value) : 1.5;
-    
     sourceNode.connect(gainNode); gainNode.connect(audioCtx.destination);
-  } catch (err) { displaySystemMessage(`[WARNING] Amplifier setup failed, using native volume.`, 'danger'); }
+  } catch (err) {}
 }
 
 function adjustVolume(value) {
-  try {
-    if (gainNode) { gainNode.gain.value = parseFloat(value); }
-    else { const remoteAudio = document.getElementById('remote-audio'); if (remoteAudio) { remoteAudio.muted = false; remoteAudio.volume = Math.min(parseFloat(value), 1.0); } }
-  } catch (err) { console.error("Volume adjustment failed", err); }
+  if (gainNode) { gainNode.gain.value = parseFloat(value); }
+  else { const remoteAudio = document.getElementById('remote-audio'); if (remoteAudio) { remoteAudio.muted = false; remoteAudio.volume = Math.min(parseFloat(value), 1.0); } }
 }
 
 function endCall() {
-  try {
-    if (!isCallActive) return;
-    isCallActive = false; amICaller = false;
-    if (callStream) { callStream.getTracks().forEach(track => track.stop()); callStream = null; }
-    if (callConnection) { callConnection.close(); callConnection = null; }
-    if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
-    if (gainNode) { gainNode.disconnect(); gainNode = null; }
-    const remoteAudio = document.getElementById('remote-audio'); if (remoteAudio) remoteAudio.srcObject = null;
-    document.getElementById('call-ui').classList.add('hidden');
-    socket.emit('call-end'); displaySystemMessage('Call ended.', 'normal');
-  } catch (err) { console.error("Error ending call", err); }
+  if (!isCallActive) return; isCallActive = false; amICaller = false;
+  if (callStream) { callStream.getTracks().forEach(track => track.stop()); callStream = null; }
+  if (callConnection) { callConnection.close(); callConnection = null; }
+  if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+  if (gainNode) { gainNode.disconnect(); gainNode = null; }
+  const remoteAudio = document.getElementById('remote-audio'); if (remoteAudio) remoteAudio.srcObject = null;
+  document.getElementById('call-ui').classList.add('hidden'); socket.emit('call-end'); displaySystemMessage('Call ended.', 'normal');
 }
-
 socket.on('call-end', () => { if (isCallActive) endCall(); });
 
 function renderMessage(payload, isMe) {
@@ -683,7 +635,6 @@ function renderMessage(payload, isMe) {
   if (payload.type === 'text') { const textNode = document.createElement('div'); textNode.textContent = payload.data; msgEl.appendChild(textNode); }
   container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
-
 function displaySystemMessage(text, type = 'normal') {
   const container = document.getElementById('messages-container');
   const msgEl = document.createElement('div'); msgEl.className = `msg system ${type}`; msgEl.textContent = text;
@@ -699,29 +650,25 @@ function performLocalPurge() {
     if (gainNode) { gainNode.disconnect(); gainNode = null; }
     if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
-    pendingChatIce = []; pendingCallIce = [];
+    pendingChatIce = []; pendingCallIce = []; fileUploadQueue = []; isUploading = false;
     document.getElementById('messages-container').innerHTML = '';
     document.getElementById('chat-view').classList.add('hidden'); document.getElementById('call-ui').classList.add('hidden');
     document.getElementById('incoming-call-modal').classList.add('hidden'); document.getElementById('lobby-view').classList.remove('hidden');
-
     currentRoomId = null; currentPassword = null; e2eeKey = null; isCallActive = false;
-  } catch (err) { console.error("Purge failure:", err); }
+  } catch (err) {}
 }
 
 function requestPurge() {
   showConfirm("Are you sure you want to leave and destroy the chat?", () => {
-    socket.emit('shred-room');
-    const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
+    socket.emit('shred-room'); const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
     performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
   });
 }
-
 socket.on('room-shredded', () => {
   const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
   performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
 });
 
-// Periodic dummy traffic obfuscation
 setInterval(() => {
   if (dataChannel && dataChannel.readyState === 'open') {
     try {
@@ -732,16 +679,14 @@ setInterval(() => {
   }
 }, Math.random() * 4000 + 2000);
 
-// Signaling relays
 socket.on('peer-joined', async () => {
   displaySystemMessage('[SYSTEM] Peer detected. Exchanging coordinates...', 'normal');
   if (isCreator) {
     try {
       if (!peerConnection) setupWebRTC();
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
+      const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer);
       socket.emit('webrtc-offer', offer);
-    } catch (err) { displaySystemMessage(`[ERROR] Offer creation failed: ${err.message}`, 'danger'); }
+    } catch (err) { displaySystemMessage(`[ERROR] Offer creation failed.`, 'danger'); }
   }
 });
 
@@ -750,11 +695,10 @@ socket.on('webrtc-offer', async (offer) => {
     try {
       if (!peerConnection) setupWebRTC();
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
+      const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer);
       socket.emit('webrtc-answer', answer);
-      while (pendingChatIce.length) { peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {}); }
-    } catch (err) { displaySystemMessage(`[ERROR] Processing offer failed: ${err.message}`, 'danger'); }
+      await flushChatIceCandidates();
+    } catch (err) { displaySystemMessage(`[ERROR] Processing offer failed.`, 'danger'); }
   }
 });
 
@@ -762,24 +706,23 @@ socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      while (pendingChatIce.length) { peerConnection.addIceCandidate(new RTCIceCandidate(pendingChatIce.shift())).catch(() => {}); }
-    } catch (err) { displaySystemMessage(`[ERROR] Processing answer failed: ${err.message}`, 'danger'); }
+      await flushChatIceCandidates();
+    } catch (err) { displaySystemMessage(`[ERROR] Processing answer failed.`, 'danger'); }
   }
 });
 
 socket.on('webrtc-ice', async (candidate) => {
   try {
     if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-      peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } else { pendingChatIce.push(candidate); }
-  } catch (err) { console.error("ICE processing error", err); }
+  } catch (err) {}
 });
 
 // ==========================================
 // AUTO-JOIN ROUTING & MANIFESTO LOGIC
 // ==========================================
 let autoJoinData = null;
-
 document.addEventListener('DOMContentLoaded', () => {
   if (window.location.hash) {
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
@@ -792,9 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const agreeBtn = document.getElementById('agree-manifesto-btn');
   const timerDisplay = document.getElementById('manifesto-timer');
   const largeTimerDisplay = document.getElementById('large-manifesto-timer');
-  
-  let timeLeft = 5; 
-  updateTimerDisplay();
+  let timeLeft = 5; updateTimerDisplay();
 
   const timerInterval = setInterval(() => {
     timeLeft--; updateTimerDisplay();
@@ -813,10 +754,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (largeTimerDisplay) { largeTimerDisplay.textContent = '00:00'; largeTimerDisplay.style.color = 'var(--primary)'; }
     if (agreeBtn) {
       agreeBtn.textContent = 'I UNDERSTAND AND AGREE'; agreeBtn.disabled = false; agreeBtn.classList.remove('disabled-btn');
-      
       agreeBtn.addEventListener('click', () => { 
         document.getElementById('manifesto-overlay').classList.add('hidden'); 
-        
         if (autoJoinData) {
           switchTab('join');
           document.getElementById('join-code').value = autoJoinData.room;

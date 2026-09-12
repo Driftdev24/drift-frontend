@@ -2,9 +2,7 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
   ? 'http://localhost:3000' 
   : 'https://drift-backend-nkru.onrender.com';
 
-const socket = io(BACKEND_URL, {
-  transports: ['websocket', 'polling'] 
-});
+const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
 
 let rtcConfig = null;
 let currentRoomId = null;
@@ -43,7 +41,6 @@ let isUploading = false;
 // Heartbeat Monitor Engine
 let lastHeartbeat = Date.now();
 let connectionMonitorInterval = null;
-let iceRestartTimeout = null;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -55,14 +52,11 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// CRITICAL FIX: Mobile Auto-Rejoin. If socket drops while tab is backgrounded, silently re-sync.
 socket.on('connect', () => {
   if (currentRoomId && currentPassword) {
     hashPasswordForServer(currentPassword).then(safePass => {
       socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
-        if (res.success) {
-          displaySystemMessage('[SYSTEM] Server re-synced successfully. Waiting for peer...', 'success');
-        }
+        if (res.success) displaySystemMessage('[SYSTEM] Server re-synced successfully. Waiting for peer...', 'success');
       });
     });
   }
@@ -105,9 +99,7 @@ async function refreshDynamicQuotaDisplay() {
 async function setupE2EEKey(password) {
   try {
     const keyMaterial = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password));
-    e2eeKey = await window.crypto.subtle.importKey(
-      'raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
-    );
+    e2eeKey = await window.crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
   } catch (err) {
     displaySystemMessage('[ERROR] Cryptography engine failed to initialize.', 'danger');
     throw err;
@@ -206,11 +198,10 @@ async function handleCreate(e) {
       if (res.success) {
         isCreator = true; currentRoomId = res.id;
         
+        // UNIVERSAL CONFIG: Relaxed WebRTC constraints to guarantee connection on Safari & Mobile
         rtcConfig = { 
           iceServers: res.iceServers, 
-          iceCandidatePoolSize: 10,
-          bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
+          iceCandidatePoolSize: 2 
         };
         
         document.getElementById('lobby-view').classList.add('hidden');
@@ -230,14 +221,11 @@ async function handleCreate(e) {
   } catch (err) { document.getElementById('error-message').textContent = 'Error during creation: ' + err.message; }
 }
 
-// CRITICAL FIX: Safe execution of button transition
 function enterGeneratedRoom() {
   try {
     openChatInterface();
     displaySystemMessage('[SYSTEM] Room active. Waiting for your peer to join via ID or Invite Link...', 'normal');
-  } catch(e) {
-    console.error("UI Transition Error:", e);
-  }
+  } catch(e) {}
 }
 
 async function handleJoin(e) {
@@ -256,9 +244,7 @@ async function handleJoin(e) {
         isCreator = false; 
         rtcConfig = { 
           iceServers: res.iceServers, 
-          iceCandidatePoolSize: 10,
-          bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
+          iceCandidatePoolSize: 2 
         };
         if (!peerConnection) setupWebRTC(); 
         openChatInterface();
@@ -293,22 +279,10 @@ function setupWebRTC() {
 
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
-      if (state === 'failed' || state === 'disconnected') {
-        if (iceRestartTimeout) clearTimeout(iceRestartTimeout);
-        
-        displaySystemMessage('[WARNING] Network route disrupted. Attempting advanced ICE Restart bypass...', 'danger');
-        
-        if (isCreator) {
-          iceRestartTimeout = setTimeout(async () => {
-            try {
-              const offer = await peerConnection.createOffer({ iceRestart: true });
-              await peerConnection.setLocalDescription(offer);
-              socket.emit('webrtc-offer', offer);
-            } catch (e) {
-              displaySystemMessage('[ERROR] ICE Restart failed. Connection permanently lost.', 'danger');
-            }
-          }, 1500); 
-        }
+      if (state === 'failed') {
+        displaySystemMessage('[ERROR] Network firewall completely blocked the connection. Try switching networks.', 'danger');
+      } else if (state === 'disconnected') {
+        displaySystemMessage('[WARNING] Network fluctuating. Tunnel attempting to stabilize...', 'danger');
       }
     };
 
@@ -318,12 +292,16 @@ function setupWebRTC() {
       }
     };
 
-    dataChannel = peerConnection.createDataChannel('drift-chat', { 
-      negotiated: true, 
-      id: 0, 
-      ordered: true 
-    });
-    setupDataChannel();
+    // UNIVERSAL CONFIG: Standard Dynamic Handshake (Fixes "Network Route Disrupted" drop on mobile)
+    if (isCreator) {
+      dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true });
+      setupDataChannel();
+    } else {
+      peerConnection.ondatachannel = (event) => {
+        dataChannel = event.channel;
+        setupDataChannel();
+      };
+    }
 
   } catch (err) { displaySystemMessage(`[ERROR] WebRTC Init Failed: ${err.message}`, 'danger'); }
 }
@@ -732,7 +710,6 @@ function displaySystemMessage(text, type = 'normal') {
 function performLocalPurge() {
   try {
     if (connectionMonitorInterval) clearInterval(connectionMonitorInterval);
-    if (iceRestartTimeout) clearTimeout(iceRestartTimeout);
     if (peerConnection) { peerConnection.close(); peerConnection = null; }
     if (callConnection) { callConnection.close(); callConnection = null; }
     if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }

@@ -41,6 +41,7 @@ let isUploading = false;
 // Heartbeat Monitor Engine
 let lastHeartbeat = Date.now();
 let connectionMonitorInterval = null;
+let iceRestartTimeout = null;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -52,11 +53,35 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+// KEEP-ALIVE PING: Prevent Render from sleeping the server and wiping the RAM
+setInterval(() => {
+  if (currentRoomId) {
+    fetch(BACKEND_URL).catch(() => {});
+  }
+}, 10 * 60 * 1000); 
+
+// CRITICAL FIX: "Zombie Room" prevention on disconnect
 socket.on('connect', () => {
   if (currentRoomId && currentPassword) {
     hashPasswordForServer(currentPassword).then(safePass => {
       socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
-        if (res.success) displaySystemMessage('[SYSTEM] Server connection re-established.', 'success');
+        if (res.success) {
+          displaySystemMessage('[SYSTEM] Server connection re-established.', 'success');
+        } else {
+          // The server restarted and erased the room. Kick User A out cleanly!
+          const alertModal = document.getElementById('purge-alert');
+          alertModal.classList.remove('hidden');
+          alertModal.querySelector('h2').innerText = "ROOM ERASED";
+          alertModal.querySelector('p').innerText = "The server restarted or the room expired. Please create a new chat.";
+          
+          performLocalPurge(); 
+          
+          setTimeout(() => {
+            alertModal.classList.add('hidden');
+            alertModal.querySelector('h2').innerText = "CHAT DESTROYED"; // Reset
+            alertModal.querySelector('p').innerText = "The secure connection was closed. No data was saved.";
+          }, 4500);
+        }
       });
     });
   }
@@ -197,7 +222,13 @@ async function handleCreate(e) {
     socket.emit('create-room', { password: serverSafePassword }, (res) => {
       if (res.success) {
         isCreator = true; currentRoomId = res.id;
-        rtcConfig = { iceServers: res.iceServers }; // Clean WebRTC setup
+        
+        rtcConfig = { 
+          iceServers: res.iceServers,
+          iceCandidatePoolSize: 10,
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
+        }; 
         
         document.getElementById('lobby-view').classList.add('hidden');
         document.getElementById('success-view').classList.remove('hidden');
@@ -237,7 +268,12 @@ async function handleJoin(e) {
     socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
       if (res.success) {
         isCreator = false; 
-        rtcConfig = { iceServers: res.iceServers }; // Clean WebRTC setup
+        rtcConfig = { 
+          iceServers: res.iceServers,
+          iceCandidatePoolSize: 10,
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
+        }; 
         
         if (!peerConnection) setupWebRTC(); 
         openChatInterface();
@@ -263,11 +299,10 @@ function openChatInterface() {
 // ==========================================
 function setupWebRTC() {
   try {
-    if (peerConnection) return; 
+    if (peerConnection || !rtcConfig) return; 
     peerConnection = new RTCPeerConnection(rtcConfig);
 
-    // CRITICAL FIX: Pre-Negotiated Channels on BOTH sides instantly bind the ports.
-    // This entirely prevents the "Network Fluctuating" handshake timeout.
+    // ADVANCED: Pre-Negotiated Channel forces Port 0 to skip timeout-prone handshakes
     dataChannel = peerConnection.createDataChannel('drift-chat', { 
       negotiated: true, 
       id: 0, 
@@ -281,10 +316,21 @@ function setupWebRTC() {
 
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
-      if (state === 'failed') {
-        displaySystemMessage('[ERROR] Network firewall blocked connection. Strict NAT detected.', 'danger');
-      } else if (state === 'disconnected') {
-        displaySystemMessage('[WARNING] Network fluctuating. Tunnel attempting to stabilize...', 'danger');
+      if (state === 'failed' || state === 'disconnected') {
+        if (iceRestartTimeout) clearTimeout(iceRestartTimeout);
+        displaySystemMessage('[WARNING] Network route disrupted. Attempting advanced ICE Restart bypass...', 'danger');
+        
+        if (isCreator) {
+          iceRestartTimeout = setTimeout(async () => {
+            try {
+              const offer = await peerConnection.createOffer({ iceRestart: true });
+              await peerConnection.setLocalDescription(offer);
+              socket.emit('webrtc-offer', offer);
+            } catch (e) {
+              displaySystemMessage('[ERROR] ICE Restart failed. Connection permanently lost.', 'danger');
+            }
+          }, 1500); 
+        }
       }
     };
 
@@ -434,6 +480,7 @@ async function sendFileStream(file) {
             dataChannel.send(packet.buffer);
             currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
 
+            // Thread yielding to maintain UI performance
             if (currentChunk % 10 === 0) await new Promise(r => setTimeout(r, 2));
           }
 
@@ -701,6 +748,7 @@ function displaySystemMessage(text, type = 'normal') {
 function performLocalPurge() {
   try {
     if (connectionMonitorInterval) clearInterval(connectionMonitorInterval);
+    if (iceRestartTimeout) clearTimeout(iceRestartTimeout);
     if (peerConnection) { peerConnection.close(); peerConnection = null; }
     if (callConnection) { callConnection.close(); callConnection = null; }
     if (callStream) { callStream.getTracks().forEach(t => t.stop()); callStream = null; }

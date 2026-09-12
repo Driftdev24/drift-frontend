@@ -56,7 +56,7 @@ socket.on('connect', () => {
   if (currentRoomId && currentPassword) {
     hashPasswordForServer(currentPassword).then(safePass => {
       socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
-        if (res.success) displaySystemMessage('[SYSTEM] Server re-synced successfully. Waiting for peer...', 'success');
+        if (res.success) displaySystemMessage('[SYSTEM] Server connection re-established.', 'success');
       });
     });
   }
@@ -197,12 +197,7 @@ async function handleCreate(e) {
     socket.emit('create-room', { password: serverSafePassword }, (res) => {
       if (res.success) {
         isCreator = true; currentRoomId = res.id;
-        
-        // UNIVERSAL CONFIG: Relaxed WebRTC constraints to guarantee connection on Safari & Mobile
-        rtcConfig = { 
-          iceServers: res.iceServers, 
-          iceCandidatePoolSize: 2 
-        };
+        rtcConfig = { iceServers: res.iceServers }; // Clean WebRTC setup
         
         document.getElementById('lobby-view').classList.add('hidden');
         document.getElementById('success-view').classList.remove('hidden');
@@ -242,10 +237,8 @@ async function handleJoin(e) {
     socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
       if (res.success) {
         isCreator = false; 
-        rtcConfig = { 
-          iceServers: res.iceServers, 
-          iceCandidatePoolSize: 2 
-        };
+        rtcConfig = { iceServers: res.iceServers }; // Clean WebRTC setup
+        
         if (!peerConnection) setupWebRTC(); 
         openChatInterface();
         displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
@@ -270,8 +263,17 @@ function openChatInterface() {
 // ==========================================
 function setupWebRTC() {
   try {
-    if (peerConnection || !rtcConfig) return; 
+    if (peerConnection) return; 
     peerConnection = new RTCPeerConnection(rtcConfig);
+
+    // CRITICAL FIX: Pre-Negotiated Channels on BOTH sides instantly bind the ports.
+    // This entirely prevents the "Network Fluctuating" handshake timeout.
+    dataChannel = peerConnection.createDataChannel('drift-chat', { 
+      negotiated: true, 
+      id: 0, 
+      ordered: true 
+    });
+    setupDataChannel();
     
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) socket.emit('webrtc-ice', event.candidate);
@@ -280,7 +282,7 @@ function setupWebRTC() {
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
       if (state === 'failed') {
-        displaySystemMessage('[ERROR] Network firewall completely blocked the connection. Try switching networks.', 'danger');
+        displaySystemMessage('[ERROR] Network firewall blocked connection. Strict NAT detected.', 'danger');
       } else if (state === 'disconnected') {
         displaySystemMessage('[WARNING] Network fluctuating. Tunnel attempting to stabilize...', 'danger');
       }
@@ -291,17 +293,6 @@ function setupWebRTC() {
         displaySystemMessage('[SYSTEM] Direct encrypted P2P tunnel active. You can now chat securely.', 'success');
       }
     };
-
-    // UNIVERSAL CONFIG: Standard Dynamic Handshake (Fixes "Network Route Disrupted" drop on mobile)
-    if (isCreator) {
-      dataChannel = peerConnection.createDataChannel('drift-chat', { ordered: true });
-      setupDataChannel();
-    } else {
-      peerConnection.ondatachannel = (event) => {
-        dataChannel = event.channel;
-        setupDataChannel();
-      };
-    }
 
   } catch (err) { displaySystemMessage(`[ERROR] WebRTC Init Failed: ${err.message}`, 'danger'); }
 }

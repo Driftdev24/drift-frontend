@@ -383,7 +383,7 @@ audio.media-content { width: 100%; max-width: 280px; height: 44px; outline: none
   body { padding: 0; }
   .app-window { border-radius: 0; border: none; height: 100dvh; max-height: 100dvh; }
   .circuit-node, .circuit-trace { display: none; }
-  .tag span { display: none; } /* Hide labels to fit IDs on small phones */
+  .tag span { display: none; } 
   #room-code-display, #room-pass-display { display: inline; } 
   .header-actions .btn-danger { font-size: 0; padding: 10px; }
   .header-actions .btn-danger::after { content: 'X'; font-size: 14px; }

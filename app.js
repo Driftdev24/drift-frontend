@@ -183,7 +183,10 @@ function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 async function handleCreate(e) {
   if (e) e.preventDefault();
   try {
-    currentPassword = document.getElementById('create-password').value;
+    // FIX: Force .trim() to destroy accidental spaces from mobile keyboards
+    currentPassword = document.getElementById('create-password').value.trim();
+    if (!currentPassword) throw new Error("Password cannot be empty.");
+
     await setupE2EEKey(currentPassword);
     const serverSafePassword = await hashPasswordForServer(currentPassword);
 
@@ -203,6 +206,7 @@ async function handleCreate(e) {
         document.getElementById('disp-id').innerText = currentRoomId;
         document.getElementById('disp-pass').innerText = currentPassword; 
         
+        // Use encodeURIComponent to make spaces and symbols safe for the URL
         const inviteLink = `${window.location.origin}${window.location.pathname}#r=${currentRoomId}&p=${encodeURIComponent(currentPassword)}`;
         const linkDisp = document.getElementById('disp-link');
         if (linkDisp) linkDisp.innerText = inviteLink;
@@ -215,15 +219,15 @@ async function handleCreate(e) {
   } catch (err) { document.getElementById('error-message').textContent = 'Error during creation: ' + err.message; }
 }
 
-function enterGeneratedRoom() {
-  openChatInterface(); displaySystemMessage('Waiting for your peer to join...');
-}
-
 async function handleJoin(e) {
   if (e) e.preventDefault();
   try {
-    currentRoomId = document.getElementById('join-code').value.toUpperCase();
-    currentPassword = document.getElementById('join-password').value;
+    // FIX: Force .trim() to destroy accidental spaces
+    currentRoomId = document.getElementById('join-code').value.trim().toUpperCase();
+    currentPassword = document.getElementById('join-password').value.trim();
+    
+    if (!currentRoomId || !currentPassword) throw new Error("ID and Password required.");
+
     await setupE2EEKey(currentPassword);
     const serverSafePassword = await hashPasswordForServer(currentPassword);
 
@@ -240,7 +244,8 @@ async function handleJoin(e) {
         openChatInterface();
         displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
       } else {
-        document.getElementById('error-message').textContent = res.error || 'Incorrect Room ID or Password.';
+        // Now displays specific errors from the server (Expired vs Wrong Password)
+        document.getElementById('error-message').textContent = res.error || 'Connection failed.';
       }
     });
   } catch (err) { document.getElementById('error-message').textContent = 'Error joining: ' + err.message; }

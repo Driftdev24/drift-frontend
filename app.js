@@ -55,6 +55,19 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+// CRITICAL FIX: Mobile Auto-Rejoin. If socket drops while tab is backgrounded, silently re-sync.
+socket.on('connect', () => {
+  if (currentRoomId && currentPassword) {
+    hashPasswordForServer(currentPassword).then(safePass => {
+      socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
+        if (res.success) {
+          displaySystemMessage('[SYSTEM] Server re-synced successfully. Waiting for peer...', 'success');
+        }
+      });
+    });
+  }
+});
+
 // ==========================================
 // DYNAMIC HARDWARE & STORAGE BUDGETING
 // ==========================================
@@ -183,7 +196,6 @@ function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 async function handleCreate(e) {
   if (e) e.preventDefault();
   try {
-    // FIX: Force .trim() to destroy accidental spaces from mobile keyboards
     currentPassword = document.getElementById('create-password').value.trim();
     if (!currentPassword) throw new Error("Password cannot be empty.");
 
@@ -206,7 +218,6 @@ async function handleCreate(e) {
         document.getElementById('disp-id').innerText = currentRoomId;
         document.getElementById('disp-pass').innerText = currentPassword; 
         
-        // Use encodeURIComponent to make spaces and symbols safe for the URL
         const inviteLink = `${window.location.origin}${window.location.pathname}#r=${currentRoomId}&p=${encodeURIComponent(currentPassword)}`;
         const linkDisp = document.getElementById('disp-link');
         if (linkDisp) linkDisp.innerText = inviteLink;
@@ -219,10 +230,19 @@ async function handleCreate(e) {
   } catch (err) { document.getElementById('error-message').textContent = 'Error during creation: ' + err.message; }
 }
 
+// CRITICAL FIX: Safe execution of button transition
+function enterGeneratedRoom() {
+  try {
+    openChatInterface();
+    displaySystemMessage('[SYSTEM] Room active. Waiting for your peer to join via ID or Invite Link...', 'normal');
+  } catch(e) {
+    console.error("UI Transition Error:", e);
+  }
+}
+
 async function handleJoin(e) {
   if (e) e.preventDefault();
   try {
-    // FIX: Force .trim() to destroy accidental spaces
     currentRoomId = document.getElementById('join-code').value.trim().toUpperCase();
     currentPassword = document.getElementById('join-password').value.trim();
     
@@ -244,7 +264,6 @@ async function handleJoin(e) {
         openChatInterface();
         displaySystemMessage('[SYSTEM] Room joined. Negotiating direct P2P tunnel...', 'normal');
       } else {
-        // Now displays specific errors from the server (Expired vs Wrong Password)
         document.getElementById('error-message').textContent = res.error || 'Connection failed.';
       }
     });
@@ -272,7 +291,6 @@ function setupWebRTC() {
       if (event.candidate) socket.emit('webrtc-ice', event.candidate);
     };
 
-    // ADVANCED: ICE-Restart Auto-Recovery System
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
       if (state === 'failed' || state === 'disconnected') {
@@ -289,7 +307,7 @@ function setupWebRTC() {
             } catch (e) {
               displaySystemMessage('[ERROR] ICE Restart failed. Connection permanently lost.', 'danger');
             }
-          }, 1500); // Small delay prevents restart spamming
+          }, 1500); 
         }
       }
     };
@@ -300,7 +318,6 @@ function setupWebRTC() {
       }
     };
 
-    // ADVANCED: Pre-Negotiated Channels (Instant Connect, Zero Handshake Wait)
     dataChannel = peerConnection.createDataChannel('drift-chat', { 
       negotiated: true, 
       id: 0, 
@@ -320,7 +337,6 @@ async function flushChatIceCandidates() {
   }
 }
 
-// P2P Heartbeat Monitor to catch ghost disconnects
 function startHeartbeatMonitor() {
   lastHeartbeat = Date.now();
   if (connectionMonitorInterval) clearInterval(connectionMonitorInterval);
@@ -449,7 +465,6 @@ async function sendFileStream(file) {
             dataChannel.send(packet.buffer);
             currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
 
-            // Yield thread for buttery UI performance during massive queues
             if (currentChunk % 10 === 0) await new Promise(r => setTimeout(r, 2));
           }
 
@@ -777,7 +792,6 @@ socket.on('webrtc-offer', async (offer) => {
     try {
       if (!peerConnection) setupWebRTC();
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      // ADVANCED: Flush ICE exactly when Remote Description becomes available
       await flushChatIceCandidates();
       
       const answer = await peerConnection.createAnswer(); 
@@ -791,7 +805,6 @@ socket.on('webrtc-answer', async (answer) => {
   if (isCreator) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      // ADVANCED: Flush ICE exactly when Remote Description becomes available
       await flushChatIceCandidates();
     } catch (err) { displaySystemMessage(`[ERROR] Processing answer failed.`, 'danger'); }
   }
@@ -802,7 +815,6 @@ socket.on('webrtc-ice', async (candidate) => {
     if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
       await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } else { 
-      // Safely queue if the Remote Description is not yet set
       pendingChatIce.push(candidate); 
     }
   } catch (err) {}
@@ -815,8 +827,6 @@ let autoJoinData = null;
 document.addEventListener('DOMContentLoaded', () => {
   if (window.location.hash) {
     const hashString = window.location.hash.substring(1);
-    
-    // FIX: Manual parsing to prevent URLSearchParams from mangling special characters like "+"
     const params = {};
     hashString.split('&').forEach(pair => {
       const [key, value] = pair.split('=');

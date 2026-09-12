@@ -200,7 +200,7 @@ function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 // SECURE HANDSHAKE
 // ==========================================
 async function handleCreate(e) {
-  e.preventDefault();
+  if (e) e.preventDefault();
   try {
     currentPassword = document.getElementById('create-password').value;
     await setupE2EEKey(currentPassword);
@@ -212,8 +212,14 @@ async function handleCreate(e) {
         rtcConfig = { iceServers: res.iceServers, iceCandidatePoolSize: 10 };
         document.getElementById('lobby-view').classList.add('hidden');
         document.getElementById('success-view').classList.remove('hidden');
+        
         document.getElementById('disp-id').innerText = currentRoomId;
         document.getElementById('disp-pass').innerText = currentPassword; 
+        
+        const inviteLink = `${window.location.origin}${window.location.pathname}#r=${currentRoomId}&p=${encodeURIComponent(currentPassword)}`;
+        const linkDisp = document.getElementById('disp-link');
+        if (linkDisp) linkDisp.innerText = inviteLink;
+        
         setupWebRTC();
       } else {
         document.getElementById('error-message').textContent = '[ERROR] Server failed to create room.';
@@ -230,7 +236,7 @@ function enterGeneratedRoom() {
 }
 
 async function handleJoin(e) {
-  e.preventDefault();
+  if (e) e.preventDefault();
   try {
     currentRoomId = document.getElementById('join-code').value.toUpperCase();
     currentPassword = document.getElementById('join-password').value;
@@ -273,7 +279,6 @@ function setupWebRTC() {
       if (event.candidate) socket.emit('webrtc-ice', event.candidate);
     };
 
-    // Robust Network Failure Detection
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
       if (state === 'failed') {
@@ -770,8 +775,20 @@ socket.on('webrtc-ice', async (candidate) => {
   } catch (err) { console.error("ICE processing error", err); }
 });
 
-// Manifesto Timer
+// ==========================================
+// AUTO-JOIN ROUTING & MANIFESTO LOGIC
+// ==========================================
+let autoJoinData = null;
+
 document.addEventListener('DOMContentLoaded', () => {
+  if (window.location.hash) {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    if (hashParams.has('r') && hashParams.has('p')) {
+      autoJoinData = { room: hashParams.get('r'), pass: hashParams.get('p') };
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }
+
   const agreeBtn = document.getElementById('agree-manifesto-btn');
   const timerDisplay = document.getElementById('manifesto-timer');
   const largeTimerDisplay = document.getElementById('large-manifesto-timer');
@@ -796,7 +813,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (largeTimerDisplay) { largeTimerDisplay.textContent = '00:00'; largeTimerDisplay.style.color = 'var(--primary)'; }
     if (agreeBtn) {
       agreeBtn.textContent = 'I UNDERSTAND AND AGREE'; agreeBtn.disabled = false; agreeBtn.classList.remove('disabled-btn');
-      agreeBtn.addEventListener('click', () => { document.getElementById('manifesto-overlay').classList.add('hidden'); });
+      
+      agreeBtn.addEventListener('click', () => { 
+        document.getElementById('manifesto-overlay').classList.add('hidden'); 
+        
+        if (autoJoinData) {
+          switchTab('join');
+          document.getElementById('join-code').value = autoJoinData.room;
+          document.getElementById('join-password').value = autoJoinData.pass;
+          handleJoin({ preventDefault: () => {} });
+        }
+      });
     }
   }
 });

@@ -1,6 +1,6 @@
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
   ? 'http://localhost:3000' 
-  : 'https://drift-backend-nkru.onrender.com';
+  : 'https://drift-backend-nkru.onrender.com'; // Update this to your active render URL
 
 const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
 
@@ -66,6 +66,7 @@ socket.on('connect', () => {
     hashPasswordForServer(currentPassword).then(safePass => {
       socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
         if (res.success) {
+          isCreator = res.isInitiator; // Fix 3 (Part D): Restore role dynamically upon reconnect
           displaySystemMessage('[SYSTEM] Server connection re-established.', 'success');
         } else {
           // The server restarted and erased the room. Kick User A out cleanly!
@@ -267,7 +268,9 @@ async function handleJoin(e) {
 
     socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
       if (res.success) {
-        isCreator = false; 
+        // FIX 3 (Part D): Receive role dynamically
+        isCreator = res.isInitiator; 
+        
         rtcConfig = { 
           iceServers: res.iceServers,
           iceCandidatePoolSize: 10,

@@ -8,6 +8,7 @@ let rtcConfig = null;
 let currentRoomId = null;
 let currentPassword = null;
 let e2eeKey = null; 
+let enigmaEngine = null; // ENIGMA GLOBAL
 
 let peerConnection;
 let dataChannel;
@@ -46,6 +47,105 @@ let iceRestartTimeout = null;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+// ==========================================
+// DRIFT ENIGMA: Dynamic Encryption Engine
+// ==========================================
+class DriftEnigma {
+  constructor(roomPassword) {
+    // Expands the classical Enigma to 95 printable ASCII characters
+    this.alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+    this.size = this.alphabet.length;
+    this.generateDailyProfile(roomPassword);
+  }
+
+  // Seeded RNG ensures both peers generate the exact same machine state
+  seededRNG(seed) {
+    let h = 0xdeadbeef;
+    for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 2654435761);
+    return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return (h >>> 0) / 4294967296; };
+  }
+
+  generateDailyProfile(password) {
+    // Configuration automatically rotates every 24 hours
+    const today = new Date().toISOString().split('T')[0];
+    const rng = this.seededRNG(password + today);
+
+    let chars = this.alphabet.split('');
+    const shuffle = () => {
+      for (let i = chars.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [chars[i], chars[j]] = [chars[j], chars[i]];
+      }
+    };
+
+    // 1. The Firewall: Plugboard Map
+    this.plugboard = new Map();
+    shuffle();
+    for (let i = 0; i < 30; i += 2) {
+      this.plugboard.set(chars[i], chars[i+1]);
+      this.plugboard.set(chars[i+1], chars[i]);
+    }
+
+    // 2. The Core: 3 Dynamic Rotors
+    this.rotors = [];
+    for (let r = 0; r < 3; r++) {
+      shuffle();
+      this.rotors.push(chars.join(''));
+    }
+
+    // 3. The Reflector
+    this.reflector = new Map();
+    shuffle();
+    for (let i = 0; i < this.size; i += 2) {
+      if (i + 1 < this.size) {
+        this.reflector.set(chars[i], chars[i+1]);
+        this.reflector.set(chars[i+1], chars[i]);
+      }
+    }
+  }
+
+  // Symmetrical processing: feeding ciphertext back in returns plaintext
+  processMessage(text) {
+    // Offsets reset per message to prevent async WebRTC delivery desyncs
+    let offsets = [0, 0, 0]; 
+    let output = "";
+
+    for (let char of text) {
+      if (!this.alphabet.includes(char)) { output += char; continue; }
+
+      // Step rotors like a mechanical odometer
+      offsets[0] = (offsets[0] + 1) % this.size;
+      if (offsets[0] === 0) {
+        offsets[1] = (offsets[1] + 1) % this.size;
+        if (offsets[1] === 0) offsets[2] = (offsets[2] + 1) % this.size;
+      }
+
+      // Pass 1: Plugboard
+      let c = this.plugboard.get(char) || char;
+
+      // Pass 2: Forward through Rotors
+      for (let i = 0; i < 3; i++) {
+        let idx = (this.alphabet.indexOf(c) + offsets[i]) % this.size;
+        c = this.rotors[i][idx];
+      }
+
+      // Pass 3: Reflector
+      c = this.reflector.get(c) || c;
+
+      // Pass 4: Backward through Rotors
+      for (let i = 2; i >= 0; i--) {
+        let idx = this.rotors[i].indexOf(c);
+        idx = (idx - offsets[i] + this.size) % this.size;
+        c = this.alphabet[idx];
+      }
+
+      // Pass 5: Plugboard output
+      output += this.plugboard.get(c) || c;
+    }
+    return output;
+  }
+}
+
 window.addEventListener('beforeunload', (e) => {
   if (currentRoomId) {
     e.preventDefault();
@@ -53,23 +153,22 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// KEEP-ALIVE PING: Prevent Render from sleeping the server and wiping the RAM
+// KEEP-ALIVE PING
 setInterval(() => {
   if (currentRoomId) {
     fetch(BACKEND_URL).catch(() => {});
   }
 }, 10 * 60 * 1000); 
 
-// CRITICAL FIX: "Zombie Room" prevention on disconnect
+// Zombie Room prevention on disconnect
 socket.on('connect', () => {
   if (currentRoomId && currentPassword) {
     hashPasswordForServer(currentPassword).then(safePass => {
       socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
         if (res.success) {
-          isCreator = res.isInitiator; // Fix 3 (Part D): Restore role dynamically upon reconnect
+          isCreator = res.isInitiator; // Restore role dynamically upon reconnect
           displaySystemMessage('[SYSTEM] Server connection re-established.', 'success');
         } else {
-          // The server restarted and erased the room. Kick User A out cleanly!
           const alertModal = document.getElementById('purge-alert');
           alertModal.classList.remove('hidden');
           alertModal.querySelector('h2').innerText = "ROOM ERASED";
@@ -79,7 +178,7 @@ socket.on('connect', () => {
           
           setTimeout(() => {
             alertModal.classList.add('hidden');
-            alertModal.querySelector('h2').innerText = "CHAT DESTROYED"; // Reset
+            alertModal.querySelector('h2').innerText = "CHAT DESTROYED"; 
             alertModal.querySelector('p').innerText = "The secure connection was closed. No data was saved.";
           }, 4500);
         }
@@ -126,6 +225,9 @@ async function setupE2EEKey(password) {
   try {
     const keyMaterial = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password));
     e2eeKey = await window.crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    
+    // Boot up the Enigma layer with the room password
+    enigmaEngine = new DriftEnigma(password);
   } catch (err) {
     displaySystemMessage('[ERROR] Cryptography engine failed to initialize.', 'danger');
     throw err;
@@ -268,7 +370,6 @@ async function handleJoin(e) {
 
     socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
       if (res.success) {
-        // FIX 3 (Part D): Receive role dynamically
         isCreator = res.isInitiator; 
         
         rtcConfig = { 
@@ -407,7 +508,13 @@ function setupDataChannel() {
       if (payload.type === 'obfuscation') return; 
       if (payload.type === 'file_start') handleRemoteFileStart(payload);
       else if (payload.type === 'file_end') handleRemoteFileEnd(payload);
-      else renderMessage(payload, false);
+      else {
+        // Enigma Decoder Integration
+        if (payload.type === 'text') {
+          payload.data = enigmaEngine.processMessage(payload.data);
+        }
+        renderMessage(payload, false);
+      }
     } catch (err) {}
   };
 }
@@ -591,9 +698,16 @@ async function handleSendText() {
   const input = document.getElementById('message-input'); const text = input.value.trim();
   if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
   try {
-    const payload = { type: 'text', data: text };
+    // 1. Pass plaintext through the Enigma Obfuscator
+    const scrambledText = enigmaEngine.processMessage(text);
+    
+    // 2. Package and encrypt with AES
+    const payload = { type: 'text', data: scrambledText };
     await sendEncryptedPayload(payload);
-    renderMessage(payload, true); input.value = '';
+    
+    // 3. Render the original plaintext locally
+    renderMessage({ type: 'text', data: text }, true); 
+    input.value = '';
   } catch(e) { displaySystemMessage('[ERROR] Failed to send text.', 'danger'); }
 }
 
@@ -760,6 +874,8 @@ function performLocalPurge() {
     if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
     pendingChatIce = []; pendingCallIce = []; fileUploadQueue = []; isUploading = false;
+    enigmaEngine = null; // Clear Enigma profile
+    
     document.getElementById('messages-container').innerHTML = '';
     document.getElementById('chat-view').classList.add('hidden'); document.getElementById('call-ui').classList.add('hidden');
     document.getElementById('incoming-call-modal').classList.add('hidden'); document.getElementById('lobby-view').classList.remove('hidden');

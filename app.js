@@ -1,6 +1,6 @@
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
   ? 'http://localhost:3000' 
-  : 'https://drift-backend-nkru.onrender.com'; // Update this to your active render URL
+  : 'https://drift-backend-nkru.onrender.com';
 
 const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
 
@@ -8,7 +8,7 @@ let rtcConfig = null;
 let currentRoomId = null;
 let currentPassword = null;
 let e2eeKey = null; 
-let enigmaEngine = null; // ENIGMA GLOBAL
+let enigmaEngine = null;
 
 let peerConnection;
 let dataChannel;
@@ -32,14 +32,12 @@ let sourceNode = null;
 
 let confirmCallback = null;
 
-// File Transfer Queue Engine
 const CHUNK_SIZE = 65536; 
 const incomingFiles = {};
 let activeSendAborts = new Map();
 let fileUploadQueue = [];
 let isUploading = false;
 
-// Heartbeat Monitor Engine
 let lastHeartbeat = Date.now();
 let connectionMonitorInterval = null;
 let iceRestartTimeout = null;
@@ -48,17 +46,45 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 // ==========================================
-// DRIFT ENIGMA: Dynamic Encryption Engine
+// FEATURE 2: WIRE INSPECTOR & ASSURANCE LOGIC
+// ==========================================
+function toggleWireInspector() {
+  document.getElementById('wire-inspector').classList.toggle('hidden');
+}
+
+function logToWire(type, data) {
+  const log = document.getElementById('wire-log');
+  if(!log) return;
+  const entry = document.createElement('div');
+  entry.className = type === 'TX' ? 'wire-entry-tx' : 'wire-entry-rx';
+  const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+  let displayData = typeof data === 'string' ? data : (data.byteLength ? `[Binary Blob: ${data.byteLength} bytes]` : JSON.stringify(data));
+  entry.textContent = `[${timestamp}] ${type}:${displayData}`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+// FEATURE 4: CLIENT-SIDE ARTIFACT SCANNER
+async function runArtifactScanner() {
+  const localCount = localStorage.length;
+  const sessionCount = sessionStorage.length;
+  const dbs = (window.indexedDB && indexedDB.databases) ? (await indexedDB.databases()).length : 0;
+  const isClean = localCount === 0 && sessionCount === 0 && dbs === 0;
+  const resDiv = document.getElementById('audit-results');
+  resDiv.style.color = isClean ? 'var(--primary)' : 'var(--danger)';
+  resDiv.innerHTML = `STATUS: ${isClean ? 'CLEAN' : 'ARTIFACTS FOUND'}<br/>localStorage: ${localCount} keys<br/>sessionStorage: ${sessionCount} keys<br/>IndexedDB:${dbs} databases`;
+}
+
+// ==========================================
+// DRIFT ENIGMA MODULE
 // ==========================================
 class DriftEnigma {
   constructor(roomPassword) {
-    // Expands the classical Enigma to 95 printable ASCII characters
     this.alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
     this.size = this.alphabet.length;
     this.generateDailyProfile(roomPassword);
   }
 
-  // Seeded RNG ensures both peers generate the exact same machine state
   seededRNG(seed) {
     let h = 0xdeadbeef;
     for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 2654435761);
@@ -66,7 +92,6 @@ class DriftEnigma {
   }
 
   generateDailyProfile(password) {
-    // Configuration automatically rotates every 24 hours
     const today = new Date().toISOString().split('T')[0];
     const rng = this.seededRNG(password + today);
 
@@ -78,7 +103,6 @@ class DriftEnigma {
       }
     };
 
-    // 1. The Firewall: Plugboard Map
     this.plugboard = new Map();
     shuffle();
     for (let i = 0; i < 30; i += 2) {
@@ -86,14 +110,12 @@ class DriftEnigma {
       this.plugboard.set(chars[i+1], chars[i]);
     }
 
-    // 2. The Core: 3 Dynamic Rotors
     this.rotors = [];
     for (let r = 0; r < 3; r++) {
       shuffle();
       this.rotors.push(chars.join(''));
     }
 
-    // 3. The Reflector
     this.reflector = new Map();
     shuffle();
     for (let i = 0; i < this.size; i += 2) {
@@ -104,42 +126,28 @@ class DriftEnigma {
     }
   }
 
-  // Symmetrical processing: feeding ciphertext back in returns plaintext
   processMessage(text) {
-    // Offsets reset per message to prevent async WebRTC delivery desyncs
     let offsets = [0, 0, 0]; 
     let output = "";
 
     for (let char of text) {
       if (!this.alphabet.includes(char)) { output += char; continue; }
-
-      // Step rotors like a mechanical odometer
       offsets[0] = (offsets[0] + 1) % this.size;
       if (offsets[0] === 0) {
         offsets[1] = (offsets[1] + 1) % this.size;
         if (offsets[1] === 0) offsets[2] = (offsets[2] + 1) % this.size;
       }
-
-      // Pass 1: Plugboard
       let c = this.plugboard.get(char) || char;
-
-      // Pass 2: Forward through Rotors
       for (let i = 0; i < 3; i++) {
         let idx = (this.alphabet.indexOf(c) + offsets[i]) % this.size;
         c = this.rotors[i][idx];
       }
-
-      // Pass 3: Reflector
       c = this.reflector.get(c) || c;
-
-      // Pass 4: Backward through Rotors
       for (let i = 2; i >= 0; i--) {
         let idx = this.rotors[i].indexOf(c);
         idx = (idx - offsets[i] + this.size) % this.size;
         c = this.alphabet[idx];
       }
-
-      // Pass 5: Plugboard output
       output += this.plugboard.get(c) || c;
     }
     return output;
@@ -153,20 +161,16 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// KEEP-ALIVE PING
 setInterval(() => {
-  if (currentRoomId) {
-    fetch(BACKEND_URL).catch(() => {});
-  }
+  if (currentRoomId) fetch(BACKEND_URL).catch(() => {});
 }, 10 * 60 * 1000); 
 
-// Zombie Room prevention on disconnect
 socket.on('connect', () => {
   if (currentRoomId && currentPassword) {
     hashPasswordForServer(currentPassword).then(safePass => {
       socket.emit('join-room', { id: currentRoomId, password: safePass }, (res) => {
         if (res.success) {
-          isCreator = res.isInitiator; // Restore role dynamically upon reconnect
+          isCreator = res.isInitiator; 
           displaySystemMessage('[SYSTEM] Server connection re-established.', 'success');
         } else {
           const alertModal = document.getElementById('purge-alert');
@@ -187,9 +191,6 @@ socket.on('connect', () => {
   }
 });
 
-// ==========================================
-// DYNAMIC HARDWARE & STORAGE BUDGETING
-// ==========================================
 async function calculateStorageBudget() {
   let safeLimit = 100 * 1024 * 1024; 
   try {
@@ -218,15 +219,26 @@ async function refreshDynamicQuotaDisplay() {
   } catch (err) {}
 }
 
-// ==========================================
-// E2EE CRYPTOGRAPHY ENGINE
-// ==========================================
+// FEATURE 1: Cryptographic Safety Numbers
+async function generateSafetyNumber(key) {
+  const exported = await window.crypto.subtle.exportKey('raw', key);
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', exported);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const code1 = ((hashArray[0] << 8) | hashArray[1]) % 10000;
+  const code2 = ((hashArray[2] << 8) | hashArray[3]) % 10000;
+  return `${String(code1).padStart(4, '0')} - ${String(code2).padStart(4, '0')}`;
+}
+
 async function setupE2EEKey(password) {
   try {
     const keyMaterial = await window.crypto.subtle.digest('SHA-256', textEncoder.encode(password));
     e2eeKey = await window.crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     
-    // Boot up the Enigma layer with the room password
+    // Update Safety Number UI
+    const safetyNum = await generateSafetyNumber(e2eeKey);
+    const safteyDisplay = document.getElementById('safety-number-display');
+    if(safteyDisplay) safteyDisplay.textContent = safetyNum;
+
     enigmaEngine = new DriftEnigma(password);
   } catch (err) {
     displaySystemMessage('[ERROR] Cryptography engine failed to initialize.', 'danger');
@@ -253,21 +265,18 @@ function base64ToBuffer(base64) {
 }
 
 async function sendEncryptedPayload(payloadObj) {
-  if (!e2eeKey || !dataChannel || dataChannel.readyState !== 'open') {
-    displaySystemMessage('[ERROR] Cannot send data. Secure tunnel is not open.', 'danger');
-    return;
-  }
+  if (!e2eeKey || !dataChannel || dataChannel.readyState !== 'open') return;
   try {
     const plainText = JSON.stringify(payloadObj);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const ciphertext = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, e2eeKey, textEncoder.encode(plainText));
-    dataChannel.send(JSON.stringify({ e2ee: true, iv: bufferToBase64(iv), ct: bufferToBase64(ciphertext) }));
+    
+    const payloadToSend = JSON.stringify({ e2ee: true, iv: bufferToBase64(iv), ct: bufferToBase64(ciphertext) });
+    logToWire('TX', payloadToSend); // LOG TO WIRE INSPECTOR
+    dataChannel.send(payloadToSend);
   } catch (e) { displaySystemMessage('[ERROR] Payload encryption failed.', 'danger'); }
 }
 
-// ==========================================
-// UI UTILITIES
-// ==========================================
 function switchTab(tab) {
   document.getElementById('error-message').textContent = '';
   document.getElementById('create-form').classList.toggle('hidden', tab !== 'create');
@@ -310,9 +319,6 @@ function cancelConfirm() { document.getElementById('confirm-modal').classList.ad
 function openInfoModal() { document.getElementById('info-modal').classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
-// ==========================================
-// SECURE HANDSHAKE
-// ==========================================
 async function handleCreate(e) {
   if (e) e.preventDefault();
   try {
@@ -330,7 +336,8 @@ async function handleCreate(e) {
           iceServers: res.iceServers,
           iceCandidatePoolSize: 10,
           bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
+          rtcpMuxPolicy: 'require',
+          iceTransportPolicy: 'relay' // MASK IPs VIA TURN SERVER
         }; 
         
         document.getElementById('lobby-view').classList.add('hidden');
@@ -362,7 +369,6 @@ async function handleJoin(e) {
   try {
     currentRoomId = document.getElementById('join-code').value.trim().toUpperCase();
     currentPassword = document.getElementById('join-password').value.trim();
-    
     if (!currentRoomId || !currentPassword) throw new Error("ID and Password required.");
 
     await setupE2EEKey(currentPassword);
@@ -371,12 +377,12 @@ async function handleJoin(e) {
     socket.emit('join-room', { id: currentRoomId, password: serverSafePassword }, (res) => {
       if (res.success) {
         isCreator = res.isInitiator; 
-        
         rtcConfig = { 
           iceServers: res.iceServers,
           iceCandidatePoolSize: 10,
           bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
+          rtcpMuxPolicy: 'require',
+          iceTransportPolicy: 'relay' // MASK IPs VIA TURN SERVER
         }; 
         
         if (!peerConnection) setupWebRTC(); 
@@ -398,25 +404,15 @@ function openChatInterface() {
   refreshDynamicQuotaDisplay();
 }
 
-// ==========================================
-// ADVANCED WEBRTC & BINARY DATA CHANNEL
-// ==========================================
 function setupWebRTC() {
   try {
     if (peerConnection || !rtcConfig) return; 
     peerConnection = new RTCPeerConnection(rtcConfig);
 
-    // ADVANCED: Pre-Negotiated Channel forces Port 0 to skip timeout-prone handshakes
-    dataChannel = peerConnection.createDataChannel('drift-chat', { 
-      negotiated: true, 
-      id: 0, 
-      ordered: true 
-    });
+    dataChannel = peerConnection.createDataChannel('drift-chat', { negotiated: true, id: 0, ordered: true });
     setupDataChannel();
     
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) socket.emit('webrtc-ice', event.candidate);
-    };
+    peerConnection.onicecandidate = (event) => { if (event.candidate) socket.emit('webrtc-ice', event.candidate); };
 
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
@@ -450,9 +446,7 @@ function setupWebRTC() {
 async function flushChatIceCandidates() {
   while (pendingChatIce.length > 0) {
     const candidate = pendingChatIce.shift();
-    try { 
-      if (candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); 
-    } catch (e) {}
+    try { if (candidate) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
   }
 }
 
@@ -464,10 +458,8 @@ function startHeartbeatMonitor() {
       if (Date.now() - lastHeartbeat > 20000) {
         displaySystemMessage('[ERROR] P2P Tunnel Lost (No response from peer). Closing secure channel.', 'danger');
         setTimeout(() => {
-          const alertModal = document.getElementById('purge-alert'); 
-          alertModal.classList.remove('hidden');
-          performLocalPurge(); 
-          setTimeout(() => alertModal.classList.add('hidden'), 3500);
+          const alertModal = document.getElementById('purge-alert'); alertModal.classList.remove('hidden');
+          performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500);
         }, 1000);
       }
     }
@@ -494,6 +486,7 @@ function setupDataChannel() {
   dataChannel.onmessage = async (event) => {
     try {
       lastHeartbeat = Date.now(); 
+      logToWire('RX', event.data); // LOG TO WIRE INSPECTOR
 
       if (event.data instanceof ArrayBuffer) { await handleIncomingBinaryChunk(event.data); return; }
 
@@ -509,19 +502,13 @@ function setupDataChannel() {
       if (payload.type === 'file_start') handleRemoteFileStart(payload);
       else if (payload.type === 'file_end') handleRemoteFileEnd(payload);
       else {
-        // Enigma Decoder Integration
-        if (payload.type === 'text') {
-          payload.data = enigmaEngine.processMessage(payload.data);
-        }
+        if (payload.type === 'text') payload.data = enigmaEngine.processMessage(payload.data);
         renderMessage(payload, false);
       }
     } catch (err) {}
   };
 }
 
-// ==========================================
-// HIGH-PERFORMANCE QUEUED FILE HANDLING
-// ==========================================
 function enqueueFile(file) {
   fileUploadQueue.push(file);
   if (!isUploading) processFileUploadQueue();
@@ -539,10 +526,7 @@ async function processFileUploadQueue() {
 async function sendFileStream(file) {
   return new Promise(async (resolveTransfer) => {
     try {
-      if (!dataChannel || dataChannel.readyState !== 'open') {
-        displaySystemMessage('[ERROR] Cannot send file. Connection not active.', 'danger');
-        return resolveTransfer();
-      }
+      if (!dataChannel || dataChannel.readyState !== 'open') return resolveTransfer();
 
       const budget = await calculateStorageBudget();
       if (file.size > budget) {
@@ -554,10 +538,7 @@ async function sendFileStream(file) {
       const fileToken = Math.floor(Math.random() * 2147483647);
       const fileIdStr = fileToken.toString();
 
-      await sendEncryptedPayload({
-        type: 'file_start', fileId: fileIdStr, fileName: file.name, fileSize: file.size, mime: file.type || 'application/octet-stream', totalChunks: totalChunks
-      });
-
+      await sendEncryptedPayload({ type: 'file_start', fileId: fileIdStr, fileName: file.name, fileSize: file.size, mime: file.type || 'application/octet-stream', totalChunks: totalChunks });
       renderTransferProgress(fileIdStr, file.name, file.size, true);
       let currentChunk = 0; activeSendAborts.set(fileIdStr, false);
 
@@ -570,10 +551,7 @@ async function sendFileStream(file) {
 
             if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
               await new Promise(r => { 
-                const bufferListener = () => {
-                  dataChannel.removeEventListener('bufferedamountlow', bufferListener);
-                  r();
-                };
+                const bufferListener = () => { dataChannel.removeEventListener('bufferedamountlow', bufferListener); r(); };
                 dataChannel.addEventListener('bufferedamountlow', bufferListener);
               });
             }
@@ -588,9 +566,9 @@ async function sendFileStream(file) {
             packet.set(iv, 8); packet.set(new Uint8Array(encryptedData), 20);
 
             dataChannel.send(packet.buffer);
+            logToWire('TX', `[Binary AES-GCM Chunk: ${packet.buffer.byteLength} bytes]`); // LOG TO WIRE INSPECTOR
             currentChunk++; updateTransferProgress(fileIdStr, currentChunk, totalChunks);
 
-            // Thread yielding to maintain UI performance
             if (currentChunk % 10 === 0) await new Promise(r => setTimeout(r, 2));
           }
 
@@ -598,16 +576,10 @@ async function sendFileStream(file) {
           removeTransferProgress(fileIdStr); activeSendAborts.delete(fileIdStr);
           renderCompletedFileCard({ name: file.name, size: file.size, mime: file.type }, null, true);
           resolveTransfer();
-        } catch (err) {
-          displaySystemMessage(`[ERROR] File transmission interrupted.`, 'danger');
-          resolveTransfer();
-        }
+        } catch (err) { displaySystemMessage(`[ERROR] File transmission interrupted.`, 'danger'); resolveTransfer(); }
       }
       pushStream();
-    } catch (err) {
-      displaySystemMessage(`[ERROR] Failed to initiate file transfer.`, 'danger');
-      resolveTransfer();
-    }
+    } catch (err) { displaySystemMessage(`[ERROR] Failed to initiate transfer.`, 'danger'); resolveTransfer(); }
   });
 }
 
@@ -646,9 +618,6 @@ function handleRemoteFileEnd(payload) {
   } catch (err) { displaySystemMessage(`[ERROR] Failed to compile received file.`, 'danger'); }
 }
 
-// ==========================================
-// FILE UI & CARD RENDERING
-// ==========================================
 function renderTransferProgress(id, name, size, isUploading) {
   const container = document.getElementById('messages-container');
   const progressBox = document.createElement('div');
@@ -691,21 +660,14 @@ function renderCompletedFileCard(fileInfo, blobUrl, isMe) {
   msgEl.appendChild(fileDetail); container.appendChild(msgEl); container.scrollTop = container.scrollHeight;
 }
 
-// ==========================================
-// TEXT, AUDIO & CALL LOGIC
-// ==========================================
 async function handleSendText() {
   const input = document.getElementById('message-input'); const text = input.value.trim();
   if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
   try {
-    // 1. Pass plaintext through the Enigma Obfuscator
     const scrambledText = enigmaEngine.processMessage(text);
-    
-    // 2. Package and encrypt with AES
     const payload = { type: 'text', data: scrambledText };
     await sendEncryptedPayload(payload);
     
-    // 3. Render the original plaintext locally
     renderMessage({ type: 'text', data: text }, true); 
     input.value = '';
   } catch(e) { displaySystemMessage('[ERROR] Failed to send text.', 'danger'); }
@@ -715,15 +677,12 @@ function handleFileSelect(event) {
   try {
     const files = Array.from(event.target.files);
     if (!files.length) return;
-    showConfirm(`Send ${files.length} file(s)?`, () => { 
-      files.forEach(file => enqueueFile(file)); 
-      event.target.value = ''; 
-    });
+    showConfirm(`Send ${files.length} file(s)?`, () => { files.forEach(file => enqueueFile(file)); event.target.value = ''; });
   } catch (err) { displaySystemMessage(`[ERROR] File selection failed.`, 'danger'); }
 }
 
 async function toggleMic() {
-  if (!dataChannel || dataChannel.readyState !== 'open') { displaySystemMessage('[ERROR] Connection not ready.', 'danger'); return; }
+  if (!dataChannel || dataChannel.readyState !== 'open') return;
   try {
     if (!isRecording) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -766,9 +725,7 @@ socket.on('call-response', async (data) => {
   if (data.accepted) {
     displaySystemMessage('Call accepted. Connecting...', 'success');
     try { await startCallEngine(); } catch (err) {}
-  } else {
-    displaySystemMessage(`Call declined${data.reason ? ' (' + data.reason + ')' : ''}.`, 'danger'); amICaller = false;
-  }
+  } else { displaySystemMessage(`Call declined${data.reason ? ' (' + data.reason + ')' : ''}.`, 'danger'); amICaller = false; }
 });
 
 async function startCallEngine() {
@@ -874,9 +831,11 @@ function performLocalPurge() {
     if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
     pendingChatIce = []; pendingCallIce = []; fileUploadQueue = []; isUploading = false;
-    enigmaEngine = null; // Clear Enigma profile
+    enigmaEngine = null; 
     
     document.getElementById('messages-container').innerHTML = '';
+    const wireLog = document.getElementById('wire-log'); if(wireLog) wireLog.innerHTML = '';
+    
     document.getElementById('chat-view').classList.add('hidden'); document.getElementById('call-ui').classList.add('hidden');
     document.getElementById('incoming-call-modal').classList.add('hidden'); document.getElementById('lobby-view').classList.remove('hidden');
     currentRoomId = null; currentPassword = null; e2eeKey = null; isCallActive = false;
@@ -896,7 +855,6 @@ socket.on('room-shredded', () => {
   performLocalPurge(); setTimeout(() => alertModal.classList.add('hidden'), 3500); 
 });
 
-// Periodic Heartbeat & Obfuscation Signal
 setInterval(() => {
   if (dataChannel && dataChannel.readyState === 'open') {
     try {
@@ -907,9 +865,6 @@ setInterval(() => {
   }
 }, Math.random() * 3000 + 3000); 
 
-// ==========================================
-// ADVANCED SIGNALING RELAYS & SYNC
-// ==========================================
 socket.on('peer-joined', async () => {
   displaySystemMessage('[SYSTEM] Peer detected. Exchanging coordinates...', 'normal');
   if (isCreator) {
@@ -949,36 +904,22 @@ socket.on('webrtc-ice', async (candidate) => {
   try {
     if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
       await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } else { 
-      pendingChatIce.push(candidate); 
-    }
+    } else { pendingChatIce.push(candidate); }
   } catch (err) {}
 });
 
-// ==========================================
-// AUTO-JOIN ROUTING & MANIFESTO LOGIC
-// ==========================================
 let autoJoinData = null;
 document.addEventListener('DOMContentLoaded', () => {
   if (window.location.hash) {
     const hashString = window.location.hash.substring(1);
     const params = {};
-    hashString.split('&').forEach(pair => {
-      const [key, value] = pair.split('=');
-      if (key && value) params[key] = decodeURIComponent(value);
-    });
-
-    if (params['r'] && params['p']) {
-      autoJoinData = { room: params['r'], pass: params['p'] };
-      window.history.replaceState(null, "", window.location.pathname);
-    }
+    hashString.split('&').forEach(pair => { const [key, value] = pair.split('='); if (key && value) params[key] = decodeURIComponent(value); });
+    if (params['r'] && params['p']) { autoJoinData = { room: params['r'], pass: params['p'] }; window.history.replaceState(null, "", window.location.pathname); }
   }
-
   const agreeBtn = document.getElementById('agree-manifesto-btn');
   const timerDisplay = document.getElementById('manifesto-timer');
   const largeTimerDisplay = document.getElementById('large-manifesto-timer');
   let timeLeft = 5; updateTimerDisplay();
-
   const timerInterval = setInterval(() => {
     timeLeft--; updateTimerDisplay();
     if (timeLeft <= 0) { clearInterval(timerInterval); unlockManifesto(); }
@@ -990,7 +931,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (timerDisplay) timerDisplay.textContent = `(${formattedTime})`;
     if (largeTimerDisplay) largeTimerDisplay.textContent = formattedTime;
   }
-
   function unlockManifesto() {
     if (timerDisplay) timerDisplay.textContent = '';
     if (largeTimerDisplay) { largeTimerDisplay.textContent = '00:00'; largeTimerDisplay.style.color = 'var(--primary)'; }
@@ -999,9 +939,7 @@ document.addEventListener('DOMContentLoaded', () => {
       agreeBtn.addEventListener('click', () => { 
         document.getElementById('manifesto-overlay').classList.add('hidden'); 
         if (autoJoinData) {
-          switchTab('join');
-          document.getElementById('join-code').value = autoJoinData.room;
-          document.getElementById('join-password').value = autoJoinData.pass;
+          switchTab('join'); document.getElementById('join-code').value = autoJoinData.room; document.getElementById('join-password').value = autoJoinData.pass;
           handleJoin({ preventDefault: () => {} });
         }
       });

@@ -188,6 +188,13 @@
               <span id="room-pass-display">---</span>
               <span id="copy-icon-key" class="tag-copy-icon">⎘</span>
             </div>
+            
+            <!-- FEATURE 1 UI: Safety Fingerprint Tag -->
+            <div class="tag" title="Safety Fingerprint (Compare with Peer)">
+              <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></svg>
+              <span id="safety-number-display">---- - ----</span>
+            </div>
+
             <div class="tag dynamic-storage-tag" id="storage-budget-display" title="Device Storage Ceiling">
               CALCULATING...
             </div>
@@ -195,12 +202,26 @@
         </div>
 
         <div class="header-actions">
+          <!-- FEATURE 2 UI: Wire Inspector Toggle -->
+          <button class="btn-outline btn-square" onclick="toggleWireInspector()" title="Inspect Wire Traffic">
+            <svg viewBox="0 0 24 24"><path d="M20 19V7H4v12h16m0-16c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V5c0-1.1.9-2 2-2h16zM8.5 15H7.3l-2.55-3.5V11.5h1.2l2.55 3.5zM10 14v1h6v-1h-6z"/></svg>
+          </button>
+
           <button class="btn-outline btn-square" onclick="requestCall()" title="Initiate Voice Call">
             <svg viewBox="0 0 24 24"><path d="M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1zM19 12h2c0-4.97-4.03-9-9-9v2c3.87 0 7 3.13 7 7z"/></svg>
           </button>
           <button class="btn-danger" onclick="requestPurge()">[ LEAVE ]</button>
         </div>
       </header>
+
+      <!-- FEATURE 2 UI: Wire Inspector Overlay -->
+      <div id="wire-inspector" class="hidden">
+        <div class="wire-header">
+          <span>RAW RTC TRAFFIC (AES-GCM CIPHERTEXT)</span>
+          <button onclick="toggleWireInspector()">X</button>
+        </div>
+        <div id="wire-log"></div>
+      </div>
 
       <div id="messages-container" class="messages-area"></div>
       
@@ -292,6 +313,17 @@
             </ul>
           </section>
 
+          <!-- FEATURE 4 UI: Client-Side Artifact Scanner -->
+          <div class="critical-warning-box" style="margin-top: 20px;">
+            <div class="warning-header">
+              <svg viewBox="0 0 24 24" class="icon-danger" style="color:var(--accent)"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+              <h3 style="color:var(--accent);">ZERO ARTIFACT SCANNER</h3>
+            </div>
+            <p style="color:var(--text-muted); font-size:0.85rem; line-height:1.5; margin-bottom: 12px;">Verify that Drift leaves no traces in your browser's persistent storage.</p>
+            <button class="btn-outline" onclick="runArtifactScanner()" style="width: 100%; margin-bottom: 12px;">RUN LOCAL AUDIT</button>
+            <div id="audit-results" style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: bold; text-align: center;"></div>
+          </div>
+
           <div class="critical-warning-box">
             <h3 style="color:var(--danger); font-size:0.75rem; margin-bottom:10px; text-transform: uppercase; text-align: center; font-family:var(--font-mono);">Official Security and Usage Disclaimer</h3>
             <p style="color:var(--text-muted); font-size:0.85rem; line-height:1.5; margin-bottom: 10px; text-align: justify;">Drift is a privacy-first communication tool engineered strictly to protect the fundamental human right to secure, private conversation. It is built for individuals, professionals, and organizations who require absolute confidentiality.</p>
@@ -323,7 +355,8 @@
 
   </div>
 
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <!-- FEATURE 5 (Optional, but included): SRI Hash for Socket.io -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-mZLF4UVrpi/QTWPA7zncOJvoCwzpPnvxgBS4guAOXXZFauqtGmnOBOBdCr5LXWJa" crossorigin="anonymous"></script>
   <script src="app.js"></script>
 </body>
 </html>

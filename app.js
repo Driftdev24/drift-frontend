@@ -220,9 +220,8 @@ async function refreshDynamicQuotaDisplay() {
 }
 
 // FEATURE 1: Cryptographic Safety Numbers
-async function generateSafetyNumber(key) {
-  const exported = await window.crypto.subtle.exportKey('raw', key);
-  const hashBuffer = await window.crypto.subtle.digest('SHA-256', exported);
+async function generateSafetyNumber(keyMaterialBuffer) {
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', keyMaterialBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const code1 = ((hashArray[0] << 8) | hashArray[1]) % 10000;
   const code2 = ((hashArray[2] << 8) | hashArray[3]) % 10000;
@@ -235,7 +234,7 @@ async function setupE2EEKey(password) {
     e2eeKey = await window.crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     
     // Update Safety Number UI
-    const safetyNum = await generateSafetyNumber(e2eeKey);
+    const safetyNum = await generateSafetyNumber(keyMaterial);
     const safteyDisplay = document.getElementById('safety-number-display');
     if(safteyDisplay) safteyDisplay.textContent = safetyNum;
 
